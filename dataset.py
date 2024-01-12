@@ -9,11 +9,13 @@ import glob
 from typing import Any
 
 
+
 class TaskOrganizedDataset(Dataset):
     """This class implements a Pytorch Dataset that abstracts a task-organized data-folder structure."""
 
     def __init__(self,
                  data_folder: str,
+                 concept_extractor: Any,
                  task_ids: tuple[int, ...] | list[int, ...] | None = None,
                  supervised_only: bool = False,
                  transform: Any | None = None,
@@ -22,12 +24,14 @@ class TaskOrganizedDataset(Dataset):
         """Initialize the class.
 
             :param data_folder: The path to the root of the data (i.e., where the task-sub-folders are located).
+            :param concept_extractor: Function converting a symbolic tree into a np.array of boolean concepts.
             :param task_ids: A tuple/list of task IDs to consider
                 (optional - if None, all tasks are considered).
             :param supervised_only: Boolean flag to consider supervised data only (default: False).
             :param transform: The transformations to apply to each images (optional).
             :param target_transform: The transformations to apply to each target (optional).
             :param max_buffer_size: Size of the examples to buffer (default: 0).
+
         """
         self.data_folder = data_folder
         self.task_ids = task_ids  # it can be None
@@ -40,6 +44,8 @@ class TaskOrganizedDataset(Dataset):
         self.task2buffered_positives = {}
         self.task2buffered_negatives = {}
         self.max_buffer_size = max_buffer_size
+
+        self.concept_extractor = concept_extractor
 
         # loading annotations from "annotations.csv" (considering only the required tasks, self.task_ids)
         self.annotations, self.task2num_examples, self.task2num_supervised, \
@@ -56,7 +62,7 @@ class TaskOrganizedDataset(Dataset):
             self.task2zero_based_index[task_id] = i
 
         # guessing shape of the input data
-        image, _, _, _, _ = self[0]
+        image, _, _, _, _, _ = self[0]
         self.input_shape = image.shape
 
         # cache
@@ -70,11 +76,11 @@ class TaskOrganizedDataset(Dataset):
 
         return len(self.annotations.index)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int, int, int, int]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int, torch.Tensor, int, int, int]:
         """Get the idx-th element of the dataset.
 
             :param idx: Integer index of the element to get.
-            :returns: A torch.Tensor (torch.uint8) without further rescaling; an integer label; the task ID;
+            :returns: A torch.Tensor (torch.uint8) without further rescaling; an integer label; concept labels (torch.Tensor torch.bool); the task ID;
                 the sample ID.
         """
         annotation = self.annotations.iloc[idx]
@@ -89,7 +95,10 @@ class TaskOrganizedDataset(Dataset):
         if self.target_transform:
             label = self.target_transform(label)
 
-        return image, label, task_id, zero_based_task_id, absolute_id
+        concepts = torch.from_numpy(self.concept_extractor(annotation['symbol']))
+
+
+        return image, label, task_id, concepts, zero_based_task_id, absolute_id
 
     def __str__(self) -> str:
         """Collect dataset stats into a string.
@@ -208,7 +217,7 @@ class TaskOrganizedDataset(Dataset):
         return added
 
     def get_balanced_sample_indices(self) -> list[int]:
-        """Get a list of indices of data samples that ara balanced with respect to positive and negative classes.
+        """Get a list of indices of data samples that are balanced with respect to positive and negative classes.
 
             :returns: A list of indices.
         """
@@ -259,7 +268,8 @@ class TaskOrganizedDataset(Dataset):
                                                            task_ids=(task_id,),
                                                            supervised_only=self.supervised_only,
                                                            transform=self.transform,
-                                                           target_transform=self.target_transform)
+                                                           target_transform=self.target_transform,
+                                                           concept_extractor=self.concept_extractor)
                 self.task_datasets.append(single_task_dataset)
         return self.task_datasets
 
@@ -278,16 +288,17 @@ class TaskOrganizedDataset(Dataset):
         ann = pd.read_csv(csv_file, dtype={'filename': 'str',
                                            'task_id': 'int',
                                            'label': 'int',
-                                           'supervised': 'bool'})
+                                           'supervised': 'bool', 'symbol': 'str'})
 
         # checking format
         assert 'filename' in ann.columns, "Cannot find 'filename' column in " + csv_file
         assert 'task_id' in ann.columns, "Cannot find 'task_id' column in " + csv_file
         assert 'label' in ann.columns, "Cannot find 'label' column in " + csv_file
         assert 'supervised' in ann.columns, "Cannot find 'supervised' column in " + csv_file
+        assert 'symbol' in ann.columns, "Cannot find 'symbol' column in " + csv_file
 
         # removing unused columns
-        ann = ann[['filename', 'task_id', 'label', 'supervised']]
+        ann = ann[['filename', 'task_id', 'label', 'supervised', 'symbol']]
         filename_col_idx = ann.columns.get_loc('filename')
 
         # adding unique sample identifier
@@ -301,6 +312,7 @@ class TaskOrganizedDataset(Dataset):
             task_id = row["task_id"]
             label = row["label"]
             supervised = row["supervised"]
+            symbol = row["symbol"]
 
             assert task_id is not None and task_id >= 0, "Invalid (negative) task ID " \
                                                          "at row " + str(i + 1) + " of " + csv_file
@@ -338,6 +350,7 @@ class TaskOrganizedDataset(Dataset):
             task_id = row["task_id"]
             supervised = row["supervised"]
             label = row["label"]
+            symbol = row["symbol"]
 
             # re-encoding the filename with the right-os-dependent separator
             filename = filename[len(str(task_id)) + 1:]
@@ -383,7 +396,7 @@ def check_data_folder(data_path: str) -> None:
     """
 
     # checking folder structure
-    assert path.isdir(data_path), "Not-existing data path " + str(data_path) + " (expected: existing folder)."
+    assert path.isdir(data_path), "Non-existing data path " + str(data_path) + " (expected: existing folder)."
 
     # main sub-folders
     assert path.isdir(path.join(data_path, "train")), "Missing sub-folder with training data ('train')."

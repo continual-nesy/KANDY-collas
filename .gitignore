@@ -1,4 +1,8 @@
 samples/
+data/
+exp/
+wandb
 .idea
 __pycache__
 *.bak
+Note.txt

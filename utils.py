@@ -9,6 +9,8 @@ from datetime import datetime
 from torch.utils.data import DataLoader
 from dataset import TaskOrganizedDataset
 
+import yaml
+
 
 class ArgNumber:
     """Implement the notion of 'number' when passed as input argument to the program, deeply checking it.
@@ -60,20 +62,28 @@ class ArgBoolean:
 
 
 def generate_experiment_name(prefix: str | None = None, suffix: str | None = None) -> str:
-    """Generate a dummy name for an experiment, such as 2023-08-10_17-06-22_Columbus.
+    """Generate a dummy name for an experiment, such as 2023-08-10_17-06-22_Persian.
 
         :param prefix: An optional prefix to add to the experiment name.
-        :param suffix: An optional suffix to add to the experiment name (by default, it is a city from Ohio, USA).
-        :returns: A string that represents the name of an experiment, such as 2023-08-10_17-06-22_Columbus.
+        :param suffix: An optional suffix to add to the experiment name (by default, it is a cat breed).
+        :returns: A string that represents the name of an experiment, such as 2023-08-10_17-06-22_Scottish-Fold.
     """
 
-    def_suffix = ["Akron", "Alliance", "Ashtabula", "Athens", "Barberton", "Bedford", "Bellefontaine", "Canton",
-                  "Chillicothe", "Cincinnati", "Cleveland", "Columbus", "Conneaut", "Dayton", "Defiance", "Delaware",
-                  "Elyria", "Euclid", "Findlay", "Gallipolis", "Greenville", "Hamilton", "Kent", "Kettering",
-                  "Lakewood", "Lancaster", "Lima", "Lorain", "Mansfield", "Marietta", "Marion", "Massillon", "Mentor",
-                  "Middletown", "Milan", "Newark", "Niles", "Norwalk", "Oberlin", "Painesville", "Parma", "Piqua",
-                  "Portsmouth", "Salem", "Sandusky", "Springfield", "Steubenville", "Tiffin", "Toledo", "Urbana",
-                  "Warren", "Wooster", "Worthington", "Xenia", "Youngstown", "Zanesville"]
+    def_suffix = ["Abyssinian", "Aegean", "American-Bobtail", "American-Curl", "American-Ringtail",
+                  "American-Shorthair", "American-Wirehair", "Aphrodite-Giant", "Arabian-Mau", "Asian",
+                  "Asian-Semi-longhair", "Australian-Mist", "Balinese", "Bambino", "Bengal", "Birman", "Bombay",
+                  "Brazilian-Shorthair", "British-Longhair", "British-Shorthair", "Burmese", "Burmilla",
+                  "California-Spangled", "Chantilly-Tiffany", "Chartreux", "Chausie", "Colorpoint-Shorthair",
+                  "Cornish-Rex", "Cymric", "Cyprus", "Devon-Rex", "Donskoy", "Dragon-Li", "Dwelf", "Egyptian-Mau",
+                  "European-Shorthair", "Exotic-Shorthair", "Foldex", "German-Rex", "Havana-Brown", "Highlander",
+                  "Himalayan", "Japanese-Bobtail", "Javanese", "Kanaani", "Khao-Manee", "Kinkalow", "Korat",
+                  "Korean-Bobtail", "Korn-Ja", "Kurilian-Bobtail", "Lambkin", "LaPerm", "Lykoi", "Maine-Coon",
+                  "Manx", "Mekong-Bobtail", "Minskin", "Minuet", "Munchkin", "Nebelung", "Neva-Masquerade",
+                  "Norwegian-Forest-Cat", "Ocicat", "Oriental-Bicolor", "Oriental-Longhair", "Oriental-Shorthair",
+                  "Persian", "Peterbald", "Pixie-bob", "Ragamuffin", "Ragdoll", "Raas", "Russian-Blue", "Sam-Sawet",
+                  "Savannah", "Scottish-Fold", "Selkirk-Rex", "Serengeti", "Siamese", "Siberian", "Singapura",
+                  "Snowshoe", "Sokoke", "Somali", "Sphynx", "Suphalak", "Thai", "Tonkinese", "Toybob", "Toyger",
+                  "Turkish-Angora", "Turkish-Van", "Ukrainian-Levkoy", "York-Chocolate"]
     ret = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if prefix is not None:
         ret = prefix + "_" + ret
@@ -295,10 +305,11 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
             y = []
 
             # looping on data
-            for (_x, _y, _, _, _) in data_loader:
+            for (_x, _y, _, _, _, _) in data_loader:
 
                 # predicting and saving result (cpu)
-                _o = torch.sigmoid(net(_x.to(device)))  # sigmoid here, warning!
+                c_pred, c_embs, oo = net(_x.to(device))
+                _o = torch.sigmoid(oo)  # sigmoid here, warning!
                 o.append(_o[:, task_id].cpu() if _o.shape[1] > 1 else _o[:, 0].cpu())
                 y.append(_y)
 
@@ -369,3 +380,52 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     s += "backward_transfer: {:.2f}".format(metrics['backward_transfer'][tasks_seen_so_far - 1]) + ", "
     s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1])
     print(s)
+
+# TODO: modify this function for different concepts!!!
+def symbol_to_concepts(symbol: str) -> np.array:
+    symbol = yaml.safe_load(symbol)
+    assert isinstance(symbol, dict)
+
+    shapes = ["triangle", "square", "circle"]
+    colors = ["red", "green", "blue", "cyan", "magenta", "yellow"]
+    sizes = ["small", "large"]
+
+    def get_leaves(symbol):
+        if "shape" in symbol:
+            return [symbol]
+        else:
+            assert len(symbol.values()) == 1
+            return [x for y in list(symbol.values())[0] for x in get_leaves(y)]
+
+    leaves = get_leaves(symbol)
+
+    out = np.zeros((len(leaves), (len(shapes) + len(colors) + len(sizes))), dtype=bool)
+    for i, l in enumerate(leaves):
+        assert l["shape"] in shapes
+        assert l["color"] in colors
+        assert l["size"] in sizes
+
+        out[i, shapes.index(l["shape"])] = 1
+        out[i, len(shapes) + colors.index(l["color"])] = 1
+        out[i, len(shapes) + len(colors) + sizes.index(l["size"])] = 1
+
+    return np.logical_or.reduce(out, axis=0) # Existential collapse: concept is true if it exists somewhere in the image.
+
+def triplet_hamming(margin):
+    def f(y_true, c_true, c_pred):
+        # TODO: in theory only the true concepts (mining anchor, positive and negative) and the predicted boolean concepts (distance computations) are needed for the loss...
+        # Alternatively, use y_true for mining?
+
+        # IMPORTANT!!!! Concepts: 0/1, Hamming distance -1/1
+        return 0
+    return f
+
+
+def triplet_euclidean(margin):
+    def f(y_true, c_true, c_pred):
+        # TODO: in theory only the true concepts (mining anchor, positive and negative) and the predicted embedding concepts (distance computations) are needed for the loss...
+        # Alternatively, use y_true for mining?
+
+        return 0
+
+    return f

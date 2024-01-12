@@ -1,0 +1,49 @@
+program: main.py
+method: grid
+# method: random
+# run_cap: 500
+# name: misc
+project: easy_100x20_1.0-1.0
+name: xval
+metric:
+  name: avg_accuracy-val
+  goal: maximize
+parameters:
+  wandb_project:
+    value: 'candypatterns_easy_100x20_1.0-1.0'
+  data_path:
+    value: './data/easy_100x20_1.0-1.0/samples/sets'
+  seed:
+    values: [1234, 5678, 9101]
+  augment:
+    value: False
+  batch:
+    values: [1, 16]
+  lr:
+    values: [-0.0001, -0.01, 0.0001, 0.01]
+  model:
+    values: ['mlp', 'cnn', 'resnet50', 'resnet50_head_only', 'vit_head_only']
+  output_folder:
+    value: 'exp'
+  print_every:
+    value: 1
+  supervised_only:
+    value: False
+  task_epochs:
+    values: [1, 10]
+  train:
+    values: ['joint', 'independent', 'continual_task', 'continual_online']
+  weight_decay:
+    value: 0.0
+  replay_buffer:
+    values: [0, 200]
+  replay_lambda:
+    values: [0., 1.0]
+  balance:
+    value: True
+  save_net:
+    value: False
+  save_results:
+    value: False
+  save_options:
+    value: False

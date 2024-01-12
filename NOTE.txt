@@ -1,0 +1,43 @@
+sgn
+saturating: dtanh/dx
+non-saturating: dx/dx
+rectifying: drelu/dx
+
+torch.clamp(min,max) ?
+
+Ha senso rifattorizzare la rappresentazione simbolica in (vertical/horizontal/don'tcare, [a,b,c,d,e]) -> Sono due annotazioni (una delle quali ha 5 simboli) o la loro combinazione è una sola?
+
+metric learning rispetto a cosa? Label finali? Oggetti singoli (esiste un oggetto condiviso)? Gruppi di oggetti (tutti uguali)? Task id? Tipo di displacement?
+
+
+
+
+Tabelle di "hashing" per task e per label interna al task? -> Da salvare come artefatti wandb?
+
+Gli sweep non hanno bisogno di iperparameter tuning "aggressivo", ma se usano più random seed è possibile fare statistiche un po' più robuste
+
+
+
+Requisiti:
+pip install pytorch-metric-learning
+https://github.com/mateoespinosa/cem
+
+
+
+
+PER ORA SOLO TASK DA 0 A 8
+Implementare CEM e definire 3 concetti: forma, colore, dimensione
+
+1)CEM vanilla: supervisione sui concetti
+2)CEM con triplet loss: supervisione "uguale/diverso"
+
+
+Architettura ok
+Rifare train loop sfruttando le funzioni interne di CEM: _run_step, training_step, val_step, test_step, loss_concept, loss_task, _extra_losses (che è una return 0 nella classe base)
+Modificare data loader per restituire anche un tensore di concetti (BINARI 0/1)
+
+
+Modificare metriche con:
+cem.metrics.* -> concept alignment score, oracle impurity score, niche impurity score, bin accuracy
+
+Intervenability durante il training?

@@ -2,7 +2,7 @@ import torch
 import copy
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset import TaskOrganizedDataset
-from utils import compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics
+from utils import compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics, triplet_hamming
 
 
 def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
@@ -82,6 +82,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     replay_set_data_loader = None
     replay_set_iter = None
 
+    hamming_loss_fn = triplet_hamming(opts['hamming_margin'])
+
     # loop on the provided training sets
     for train_task_id in range(0, len(train_sets)):
 
@@ -126,14 +128,15 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             # loop on training samples
             n = 0
             avg_loss = 0.
-            for (x, y, _, zero_based_train_task_id, abs_idx) in train_set_data_loader:
+            for (x, y, _, concepts, zero_based_train_task_id, abs_idx) in train_set_data_loader:
 
                 # moving data and casting
                 x = x.to(opts['device'])
                 y = y.to(torch.float32).to(opts['device'])
+                c = concepts.to(torch.float32).to(opts['device'])
 
                 # prediction
-                o = net(x)
+                c_pred, c_embs, o = net(x)
                 if opts['train'] != 'joint':
                     o = o[:, train_task_id] if o.shape[1] > 1 else o[:, 0]
                 else:
@@ -142,6 +145,13 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 # loss evaluation (from raw outputs)
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean')
+
+                if opts['concept_lambda'] > 0.:
+                    loss += opts['concept_lambda'] * torch.nn.functional.binary_cross_entropy(c_pred, c, reduction='mean')
+
+                # Hamming loss:
+                if opts['triplet_lambda'] > 0.:
+                    loss += opts['triplet_lambda'] * hamming_loss_fn(y, concepts, c_pred)
 
                 # experience replay
                 if opts['replay_buffer'] > 0 and opts['replay_lambda'] > 0.:
@@ -162,7 +172,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                         zero_based_train_task_id = zero_based_train_task_id.to(opts['device'])
 
                         # prediction on selected experiences (they might belong to different tasks)
-                        o = net(x)
+                        c_pred, c_embs, o = net(x)
                         o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
 
                         # loss evaluation on the retrieved experiences (from raw outputs)
