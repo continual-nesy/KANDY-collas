@@ -16,6 +16,7 @@ class TaskOrganizedDataset(Dataset):
     def __init__(self,
                  data_folder: str,
                  concept_extractor: Any,
+                 triplet_annotator: Any,
                  task_ids: tuple[int, ...] | list[int, ...] | None = None,
                  supervised_only: bool = False,
                  transform: Any | None = None,
@@ -46,6 +47,7 @@ class TaskOrganizedDataset(Dataset):
         self.max_buffer_size = max_buffer_size
 
         self.concept_extractor = concept_extractor
+        self.triplet_annotator = triplet_annotator
 
         # loading annotations from "annotations.csv" (considering only the required tasks, self.task_ids)
         self.annotations, self.task2num_examples, self.task2num_supervised, \
@@ -62,7 +64,7 @@ class TaskOrganizedDataset(Dataset):
             self.task2zero_based_index[task_id] = i
 
         # guessing shape of the input data
-        image, _, _, _, _, _ = self[0]
+        image, _, _, _, _, _, _ = self[0]
         self.input_shape = image.shape
 
         # cache
@@ -96,9 +98,10 @@ class TaskOrganizedDataset(Dataset):
             label = self.target_transform(label)
 
         concepts = torch.from_numpy(self.concept_extractor(annotation['symbol']))
+        eq_classes = annotation['equivalence_class']
 
 
-        return image, label, task_id, concepts, zero_based_task_id, absolute_id
+        return image, label, task_id, concepts, eq_classes, zero_based_task_id, absolute_id
 
     def __str__(self) -> str:
         """Collect dataset stats into a string.
@@ -269,7 +272,8 @@ class TaskOrganizedDataset(Dataset):
                                                            supervised_only=self.supervised_only,
                                                            transform=self.transform,
                                                            target_transform=self.target_transform,
-                                                           concept_extractor=self.concept_extractor)
+                                                           concept_extractor=self.concept_extractor,
+                                                           triplet_annotator=self.triplet_annotator)
                 self.task_datasets.append(single_task_dataset)
         return self.task_datasets
 
@@ -297,8 +301,11 @@ class TaskOrganizedDataset(Dataset):
         assert 'supervised' in ann.columns, "Cannot find 'supervised' column in " + csv_file
         assert 'symbol' in ann.columns, "Cannot find 'symbol' column in " + csv_file
 
+        if 'equivalence_class' not in ann.columns:
+            ann = self.triplet_annotator(ann)
+
         # removing unused columns
-        ann = ann[['filename', 'task_id', 'label', 'supervised', 'symbol']]
+        ann = ann[['filename', 'task_id', 'label', 'supervised', 'symbol', 'equivalence_class']]
         filename_col_idx = ann.columns.get_loc('filename')
 
         # adding unique sample identifier

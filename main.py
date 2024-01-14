@@ -7,8 +7,10 @@ import wandb
 from os.path import join
 from training import train
 from dataset import check_data_folder, TaskOrganizedDataset
-from utils import ArgNumber, ArgBoolean, save_dict, generate_experiment_name, set_seed, elapsed_time, symbol_to_concepts
+from utils import ArgNumber, ArgBoolean, save_dict, generate_experiment_name, set_seed, elapsed_time
 from networks import generate_net, save_net
+
+from background_knowledge import symbol_to_concepts, annotate_triplet_labels
 
 # initial checks
 assert __name__ == "__main__", "Invalid usage! Run this script from command line, do not import it!"
@@ -126,6 +128,8 @@ assert opts['replay_buffer'] == 0 or opts['replay_lambda'] > 0., \
     "The 'replay_lambda' coefficient must be > 0., otherwise 'replay_buffer' will have no effects."
 assert opts['replay_lambda'] == 0. or opts['replay_buffer'] > 0., \
     "The 'replay_buffer' must be > 0, otherwise 'replay_lambda' will have no effects."
+assert opts['triplet_lambda'] == 0. or opts['batch'] > 3, \
+    "Triplet loss uses online mining, if your mini batch size is <= 3, you must set triplet_lambda to 0."
 
 
 # setting up seeds for random number generators
@@ -136,13 +140,16 @@ print("Preparing datasets...")
 train_set = TaskOrganizedDataset(join(data_folder, 'train'),
                                  supervised_only=opts['supervised_only'],
                                  max_buffer_size=opts['replay_buffer'],   # memory buffer for experience replay
-                                 concept_extractor=symbol_to_concepts)
+                                 concept_extractor=symbol_to_concepts,
+                                 triplet_annotator=annotate_triplet_labels)
 val_set = TaskOrganizedDataset(join(data_folder, 'val'),
                                supervised_only=opts['supervised_only'],
-                               concept_extractor=symbol_to_concepts)
+                               concept_extractor=symbol_to_concepts,
+                               triplet_annotator=annotate_triplet_labels)
 test_set = TaskOrganizedDataset(join(data_folder, 'test'),
                                 supervised_only=opts['supervised_only'],
-                                concept_extractor=symbol_to_concepts)
+                                concept_extractor=symbol_to_concepts,
+                                triplet_annotator=annotate_triplet_labels)
 
 opts["n_concepts"] = len(train_set[0][3]) # Deduce concept number from the first element in the training set.
 
@@ -181,7 +188,8 @@ metrics_train, metrics_val, metrics_test = train(net, train_set, val_set, test_s
 if wb is not None:
     print("Logging to W&B...")
     for i in range(0, train_set.num_tasks):
-        for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer']:
+        for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer',
+                           'concept_avg_accuracy', 'cas', 'ois', 'nis']:
             wb.log(data={score_name + "-" + metrics_train['name']: metrics_train[score_name][i],
                          score_name + "-" + metrics_val['name']: metrics_val[score_name][i],
                          score_name + "-" + metrics_test['name']: metrics_test[score_name][i]},

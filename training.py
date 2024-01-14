@@ -2,8 +2,12 @@ import torch
 import copy
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset import TaskOrganizedDataset
-from utils import compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics, triplet_hamming
+from utils import compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics, HammingDistance
 
+import pytorch_metric_learning.losses, pytorch_metric_learning.miners
+import cem.metrics.accs
+# TODO: cas and oracle require tensorflow because they build keras models...Reimplement them in torch?
+#       niching uses predict_proba() (it's a sklearn/keras model)
 
 def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
           train_set: TaskOrganizedDataset,
@@ -72,7 +76,11 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'avg_accuracy': [-1.] * num_tasks,
         'avg_forgetting': [-1.] * num_tasks,
         'backward_transfer': [-1.] * num_tasks,
-        'forward_transfer': [-1.] * num_tasks
+        'forward_transfer': [-1.] * num_tasks,
+        'concept_avg_accuracy': [-1.] * num_tasks,
+        'cas': [-1.] * num_tasks,
+        'ois': [-1.] * num_tasks,
+        'nis': [-1.] * num_tasks
     }
     metrics_val = copy.deepcopy(metrics_train)
     metrics_val['name'] = 'val'
@@ -82,7 +90,14 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     replay_set_data_loader = None
     replay_set_iter = None
 
-    hamming_loss_fn = triplet_hamming(opts['hamming_margin'])
+    hamming_loss_fn = pytorch_metric_learning.losses.TripletMarginLoss(
+                                                        margin=opts['hamming_margin'],
+                                                        distance=HammingDistance('01'),
+                                                        reducer=pytorch_metric_learning.reducers.AvgNonZeroReducer())
+    mining_fn = pytorch_metric_learning.miners.TripletMarginMiner(margin=opts['hamming_margin'],
+                                                       distance=HammingDistance('01'),
+                                                       type_of_triplets="semihard")
+
 
     # loop on the provided training sets
     for train_task_id in range(0, len(train_sets)):
@@ -128,7 +143,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             # loop on training samples
             n = 0
             avg_loss = 0.
-            for (x, y, _, concepts, zero_based_train_task_id, abs_idx) in train_set_data_loader:
+            for (x, y, _, concepts, eq_classes, zero_based_train_task_id, abs_idx) in train_set_data_loader:
 
                 # moving data and casting
                 x = x.to(opts['device'])
@@ -151,7 +166,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 # Hamming loss:
                 if opts['triplet_lambda'] > 0.:
-                    loss += opts['triplet_lambda'] * hamming_loss_fn(y, concepts, c_pred)
+                    indices_tuple = mining_fn(c_pred, eq_classes)
+                    loss += opts['triplet_lambda'] * hamming_loss_fn(c_pred, eq_classes, indices_tuple)
 
                 # experience replay
                 if opts['replay_buffer'] > 0 and opts['replay_lambda'] > 0.:
@@ -254,12 +270,21 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             metrics['backward_transfer'][eval_task_id] = backward_transfer(acc_matrix_so_far)
             metrics['forward_transfer'][eval_task_id] = forward_transfer(acc_matrix_so_far)
 
+            metrics['concept_avg_accuracy'][eval_task_id] = 0
+            metrics['cas'][eval_task_id] = 0
+            metrics['ois'][eval_task_id] = 0
+            metrics['nis'][eval_task_id] = 0
+
             # fixing the 'joint' case (in a nutshell: repeating the same results many times to fill up the arrays)
             if opts['train'] == 'joint':
                 metrics['avg_accuracy'][0:-1] = [metrics['avg_accuracy'][-1]] * (num_tasks - 1)
                 metrics['avg_forgetting'][0:-1] = [metrics['avg_forgetting'][-1]] * (num_tasks - 1)
                 metrics['backward_transfer'][0:-1] = [metrics['backward_transfer'][-1]] * (num_tasks - 1)
                 metrics['forward_transfer'][0:-1] = [metrics['forward_transfer'][-1]] * (num_tasks - 1)
+                metrics['concept_avg_accuracy'][0:-1] = [metrics['concept_avg_accuracy'][-1]] * (num_tasks - 1)
+                metrics['cas'][0:-1] = [metrics['cas'][-1]] * (num_tasks - 1)
+                metrics['ois'][0:-1] = [metrics['ois'][-1]] * (num_tasks - 1)
+                metrics['nis'][0:-1] = [metrics['nis'][-1]] * (num_tasks - 1)
 
             # printing
             print_metrics(metrics, train_task_id + 1)

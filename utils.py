@@ -1,4 +1,5 @@
 import json
+
 import torch
 import time
 import numpy as np
@@ -9,8 +10,7 @@ from datetime import datetime
 from torch.utils.data import DataLoader
 from dataset import TaskOrganizedDataset
 
-import yaml
-
+import pytorch_metric_learning.distances
 
 class ArgNumber:
     """Implement the notion of 'number' when passed as input argument to the program, deeply checking it.
@@ -305,7 +305,7 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
             y = []
 
             # looping on data
-            for (_x, _y, _, _, _, _) in data_loader:
+            for (_x, _y, _, _, _, _, _) in data_loader:
 
                 # predicting and saving result (cpu)
                 c_pred, c_embs, oo = net(_x.to(device))
@@ -378,54 +378,58 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     s += "    avg_accuracy: {:.2f}".format(metrics['avg_accuracy'][tasks_seen_so_far - 1]) + ", "
     s += "avg_forgetting: {:.2f}".format(metrics['avg_forgetting'][tasks_seen_so_far - 1]) + ", "
     s += "backward_transfer: {:.2f}".format(metrics['backward_transfer'][tasks_seen_so_far - 1]) + ", "
-    s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1])
+    s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1]) + ", "
+
+    s += "concept_avg_accuracy: {:.2f}".format(metrics['concept_avg_accuracy'][tasks_seen_so_far - 1]) + ", "
+    s += "cas: {:.2f}".format(metrics['cas'][tasks_seen_so_far - 1]) + ", "
+    s += "ois: {:.2f}".format(metrics['ois'][tasks_seen_so_far - 1]) + ", "
+    s += "nis: {:.2f}".format(metrics['nis'][tasks_seen_so_far - 1])
     print(s)
 
-# TODO: modify this function for different concepts!!!
-def symbol_to_concepts(symbol: str) -> np.array:
-    symbol = yaml.safe_load(symbol)
-    assert isinstance(symbol, dict)
 
-    shapes = ["triangle", "square", "circle"]
-    colors = ["red", "green", "blue", "cyan", "magenta", "yellow"]
-    sizes = ["small", "large"]
 
-    def get_leaves(symbol):
-        if "shape" in symbol:
-            return [symbol]
+
+
+class HammingDistance(pytorch_metric_learning.distances.BaseDistance):
+    def __init__(self, emb_type='01'):
+        super().__init__(collect_stats = False,
+                        normalize_embeddings=True,
+                        p=2,
+                        power=1,
+                        is_inverted=False)
+        assert emb_type in ['01', '11']
+        self.emb_type = emb_type
+
+    # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains 0 or 1.
+    # https://dl.acm.org/doi/pdf/10.1145/3532624
+    def hamming_distance_matrix_01(self, x, y):
+        # Todo: are shapes correct? (batch, emb) -> (batch, batch)
+        return torch.linalg.norm(x[:, None, :] - y[None, :, :], ord=1, axis=-1)
+
+    # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains -1 or +1.
+    # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
+    def hamming_distance_matrix_11(self, x, y):
+        # Todo: are shapes correct? (batch, emb) -> (batch, batch)
+        bitsize = x.shape[-1]
+        return 0.5 * (bitsize - torch.matmul(x, y.T))
+
+    # Computes pairwise Hamming distance between two embeddings bounded in [0, 1].
+    def hamming_distance_pairwise_01(self, a, b):
+        return torch.linalg.norm(a - b, ord=1, axis=-1)
+
+    # Computes pairwise Hamming distance between two embeddings bounded in [-1, +1].
+    # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
+    def hamming_distance_pair_11(self, a, b):
+        bitsize = a.shape[-1]
+        return 0.5 * (bitsize - torch.matmul(a, b.T))
+
+    def compute_mat(self, query_emb, ref_emb):
+        if self.emb_type == '01':
+            return self.hamming_distance_matrix_01(query_emb, ref_emb)
         else:
-            assert len(symbol.values()) == 1
-            return [x for y in list(symbol.values())[0] for x in get_leaves(y)]
+            return self.hamming_distance_matrix_11(query_emb, ref_emb)
 
-    leaves = get_leaves(symbol)
-
-    out = np.zeros((len(leaves), (len(shapes) + len(colors) + len(sizes))), dtype=bool)
-    for i, l in enumerate(leaves):
-        assert l["shape"] in shapes
-        assert l["color"] in colors
-        assert l["size"] in sizes
-
-        out[i, shapes.index(l["shape"])] = 1
-        out[i, len(shapes) + colors.index(l["color"])] = 1
-        out[i, len(shapes) + len(colors) + sizes.index(l["size"])] = 1
-
-    return np.logical_or.reduce(out, axis=0) # Existential collapse: concept is true if it exists somewhere in the image.
-
-def triplet_hamming(margin):
-    def f(y_true, c_true, c_pred):
-        # TODO: in theory only the true concepts (mining anchor, positive and negative) and the predicted boolean concepts (distance computations) are needed for the loss...
-        # Alternatively, use y_true for mining?
-
-        # IMPORTANT!!!! Concepts: 0/1, Hamming distance -1/1
-        return 0
-    return f
-
-
-def triplet_euclidean(margin):
-    def f(y_true, c_true, c_pred):
-        # TODO: in theory only the true concepts (mining anchor, positive and negative) and the predicted embedding concepts (distance computations) are needed for the loss...
-        # Alternatively, use y_true for mining?
-
-        return 0
-
-    return f
+    # Must return a tensor where output[j] represents
+    # the distance/similarity between query_emb[j] and ref_emb[j]
+    def pairwise_distance(self, query_emb, ref_emb):
+        raise NotImplementedError
