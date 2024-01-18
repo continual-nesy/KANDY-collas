@@ -436,7 +436,7 @@ class HammingDistance(pytorch_metric_learning.distances.BaseDistance):
         pairwise_int = torch.gt(pairwise_prod, 0.5)
         neg_pairwise_int = torch.gt(neg_pairwise_prod, 0.5)
 
-        mask = pairwise_prod + neg_pairwise_prod
+        mask = (pairwise_prod + neg_pairwise_prod) / 2
         mask = torch.mean(mask.to(torch.float), dim=[0, 1])
 
         binary_mask = pairwise_int + neg_pairwise_int

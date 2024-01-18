@@ -9,6 +9,10 @@ from torchvision.models import ViT_B_16_Weights
 
 from cem.models.cem import ConceptEmbeddingModel
 
+class FakeIdentity(nn.Identity):
+    def __init__(self, out_features):
+        super().__init__()
+        self.out_features = out_features
 
 def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable:
     def f(output_dim):
@@ -23,7 +27,7 @@ def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable
             net = nn.Sequential(
                 nn.Linear(input_size, 100),
                 nn.Tanh(),
-                nn.Linear(100, output_dim)
+                FakeIdentity(100)
             )
 
         # CNN
@@ -43,13 +47,13 @@ def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable
                 nn.Linear(256 * 5 * 5, 4096),
                 nn.ReLU(inplace=True),
                 nn.Dropout(),
-                nn.Linear(4096, output_dim)
+                FakeIdentity(4096)
             )
 
         # ResNet50 (trained from scratch)
         elif backbone_name == 'resnet50':
             net = resnet50()
-            net.fc = nn.Linear(in_features=2048, out_features=output_dim)
+            net.fc = FakeIdentity(2048)
 
         # ResNet50 (pretrained backbone, training head only)
         elif backbone_name == 'resnet50_head_only':
@@ -63,7 +67,7 @@ def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable
             for parameter in net.parameters():
                 parameter.requires_grad = False
 
-            net.fc = nn.Linear(in_features=2048, out_features=output_dim)
+            net.fc = FakeIdentity(2048)
 
         # ViT Base 16 (pretrained backbone, training head only)
         elif backbone_name == 'vit_head_only':
@@ -77,7 +81,7 @@ def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable
             for parameter in net.parameters():
                 parameter.requires_grad = False
 
-            net.heads = nn.Linear(in_features=768, out_features=output_dim)
+            net.heads = FakeIdentity(768)
 
         else:
             raise ValueError(f"Unknown model: {backbone_name}")

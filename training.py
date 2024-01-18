@@ -93,6 +93,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     optimizer = None
     replay_set_data_loader = None
     replay_set_iter = None
+    zero_five = torch.ones((opts['batch'], opts['n_concepts'])).to(opts['device']) * .5
 
     distance_fn = HammingDistance(emb_type='01', use_mask=opts['use_mask'])
     hamming_loss_fn = MaskedTripletMarginLoss(
@@ -173,23 +174,20 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 if opts['concept_lambda'] > 0. and opts['min_pos_concepts'] > 0:
                     loss += opts['concept_lambda'] * \
-                            torch.mean(torch.max(
-                                torch.zeros(c_pred[positive_samples].shape[0]).to(opts['device']),
-                                torch.sum(c_pred[positive_samples]) - \
-                                torch.tensor(opts['min_pos_concepts']).to(torch.float).to(opts['device'])))
+                            torch.mean(
+                                torch.clamp(torch.sum(c_pred[positive_samples]) - float(opts['min_pos_concepts']), 0))
 
                 if opts['concept_polarization_lambda'] > 0.:
                     loss += -opts['concept_polarization_lambda'] * \
                             torch.nn.functional.l1_loss(c_pred,
-                                                        torch.ones(c_pred.shape).to(opts['device']) * .5,
+                                                        zero_five[:c_pred.shape[0],:],
                                                         reduction="mean")
 
 
                 if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy':
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
                     loss += -opts['mask_polarization_lambda'] * \
-                            torch.nn.functional.l1_loss(mask,
-                                                        torch.ones(mask.shape).to(opts['device']) * .5,
+                            torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
                                                         reduction="mean")
 
                 # Hamming loss:
@@ -199,30 +197,35 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                         triplet_loss = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
                                                         positives=c_pred[positive_samples])
 
-
+#########################################################################################################################################
+# TODO: Qualcosa non quadra da qui
                     if opts['replay_buffer'] > 2:
                         if len(train_set.buffered_indices) > 0 and \
                             train_task_id in train_set.task2buffered_positives and \
-                            train_task_id in train_set.task2buffered_negatives:
+                            train_task_id in train_set.task2buffered_negatives and \
+                            positive_samples.shape[0] > 0 and \
+                            len(train_set.task2buffered_positives[train_task_id]) > 0 and \
+                            len(train_set.task2buffered_negatives[train_task_id]) > 0:
 
-                            triplet_p = torch.zeros(c_pred.shape, dtype=torch.float)
-                            triplet_n = torch.zeros(c_pred.shape, dtype=torch.float)
+
+                            triplet_p = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
+                            triplet_n = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
 
                             buffered_p = torch.zeros(c_pred.shape, dtype=torch.float) # Positives in buffer for mask re-computation
 
-                            for i, yy in enumerate(y.to(torch.bool).cpu().numpy()):
-                                if yy:
-                                    triplet_p[i,:] = random.choice(train_set.task2buffered_positives[train_task_id])
-                                    triplet_n[i,:] = random.choice(train_set.task2buffered_negatives[train_task_id])
-                                    buffered_p[i, :] = triplet_p[i,:]
-                                else:
-                                    triplet_n[i, :] = random.choice(train_set.task2buffered_positives[train_task_id])
-                                    triplet_p[i, :] = random.choice(train_set.task2buffered_negatives[train_task_id])
-                                    buffered_p[i, :] = triplet_n[i, :]
+                            for i in range(c_pred[positive_samples].shape[0]):
+                                _, _, _, _, triplet_p[i,:], _, _, _ = train_set[random.choice(train_set.task2buffered_positives[train_task_id])]
+                                _, _, _, _, triplet_n[i,:], _, _, _ = train_set[random.choice(train_set.task2buffered_negatives[train_task_id])]
+                                buffered_p[i, :] = triplet_p[i,:]
 
-                            triplet_p = triplet_p.to(opts['device'])
-                            triplet_n = triplet_n.to(opts['device'])
+                            triplet_p = triplet_p.to(opts['device']).detach()
+                            triplet_n = triplet_n.to(opts['device']).detach()
                             buffered_p = buffered_p.to(opts['device']).detach()
+
+                            print(triplet_p)
+                            print(triplet_n)
+                            ERROR # TODO: Perché alcune entry sono zero, anche se prese da task2buffered_*???
+
 
                             if opts['use_mask'] == 'crisp':
                                 _, mask = distance_fn.soft_intersection(buffered_p)
@@ -231,8 +234,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                             else:
                                 mask = None
 
-                            ap = distance_fn.hamming_distance_01_masked(c_pred, triplet_p, mask)
-                            an = distance_fn.hamming_distance_01_masked(c_pred, triplet_n, mask)
+                            ap = distance_fn.hamming_distance_01_masked(c_pred[positive_samples], triplet_p, mask)
+                            an = distance_fn.hamming_distance_01_masked(c_pred[positive_samples], triplet_n, mask)
 
 
                             current_margins = distance_fn.margin(ap, an)
@@ -245,6 +248,9 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                 loss_mat = torch.nn.functional.relu(violation)
 
                             triplet_loss += torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction
+
+# A qui
+#########################################################################################################################################
 
                             # possibly storing the current example(s) to the memory buffer
                             added_something = False
