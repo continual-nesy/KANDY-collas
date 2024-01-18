@@ -52,6 +52,8 @@ arg_parser.add_argument("--replay_lambda",
                         help="Weight of the portion of the loss that is about experience replay (only compatible with"
                              " --train continual_*; default: 0.)",
                         type=ArgNumber(float, min_val=0.), default=0.)
+arg_parser.add_argument("--store_fuzzy", help="Store concepts in replay buffer as fuzzy tensors (default: false)",
+                        type=ArgBoolean(), default=False)
 arg_parser.add_argument("--cem_emb_size",
                         help="Embedding size for a single concept; (default: 12)",
                         type=ArgNumber(int, min_val=4), default=12)
@@ -62,8 +64,24 @@ arg_parser.add_argument("--triplet_lambda",
                         help="Weight of the portion of the triplet loss; (default: 0.)",
                         type=ArgNumber(float, min_val=0.), default=0.)
 arg_parser.add_argument("--concept_lambda",
-                        help="Weight of the portion of the CEM loss; (default: 0.)",
-                        type=ArgNumber(float, min_val=0.), default=0.)
+                        help="Weight of the concept regularization; (default: 0.01)",
+                        type=ArgNumber(float, min_val=0.), default=0.01)
+arg_parser.add_argument("--concept_polarization_lambda",
+                        help="Weight of the concept polarization loss; (default: 0.01)",
+                        type=ArgNumber(float, min_val=0.), default=0.01)
+arg_parser.add_argument("--mask_polarization_lambda",
+                        help="Weight of the mask polarization loss; (default: 0.01). Only with --use_mask 'fuzzy'.",
+                        type=ArgNumber(float, min_val=0.), default=0.01)
+arg_parser.add_argument("--use_mask", help="Hamming triplet loss mask in "
+                                        "{'no', 'crisp', 'fuzzy'}",
+                        type=str, default='fuzzy',
+                        choices=['no', 'crisp', 'fuzzy'])
+arg_parser.add_argument("--min_pos_concepts",
+                        help="Minimum number of active concepts for positive samples for concept regularization; (default: 3)",
+                        type=ArgNumber(int, min_val=0), default=3)
+arg_parser.add_argument("--n_concepts",
+                        help="Number of concepts in the CEM layer; (default: 20)",
+                        type=ArgNumber(int, min_val=1, max_val=128), default=20)
 arg_parser.add_argument("--seed", help="Integer seed for random numbers (if < 0, it depends on time, default case)",
                         type=int, default=-1)
 arg_parser.add_argument("--output_folder", help="Output folder (default: exp)", type=str, default="exp")
@@ -124,13 +142,17 @@ assert (opts['train'] == 'continual_online' and opts['balance'] is True and opts
                                             "if a replay buffer is used."
 assert opts['replay_buffer'] == 0 or (opts['train'] == 'continual_task' or opts['train'] == 'continual_online'), \
     "You can only use a replay buffer when the training method ('train') is 'continual_task' or 'continual_online'"
-assert opts['replay_buffer'] == 0 or opts['replay_lambda'] > 0., \
+assert opts['replay_buffer'] == 0 or opts['replay_lambda'] + opts['triplet_lambda'] > 0., \
     "The 'replay_lambda' coefficient must be > 0., otherwise 'replay_buffer' will have no effects."
 assert opts['replay_lambda'] == 0. or opts['replay_buffer'] > 0., \
     "The 'replay_buffer' must be > 0, otherwise 'replay_lambda' will have no effects."
-assert opts['triplet_lambda'] == 0. or opts['batch'] > 3, \
-    "Triplet loss uses online mining, if your mini batch size is <= 3, you must set triplet_lambda to 0."
-
+assert opts['replay_buffer'] + opts['batch'] >= 3, \
+    "Triplet loss uses online mining within a batch and/or offline mining inside the replay buffer. \
+    You cannot have both set to less than a triple."
+assert opts['concept_lambda'] == 0. or opts['min_pos_concepts'] > 0, \
+    "Positive concepts regularization requires at least 1 minimum positive concept for positive class."
+assert opts['mask_polarization_lambda'] == 0. or opts['use_mask'] == 'fuzzy', \
+    "Mask polarization can be used only if the mask is differentiable (i.e. fuzzy intersection)."
 
 # setting up seeds for random number generators
 set_seed(opts['seed'])
@@ -138,20 +160,23 @@ set_seed(opts['seed'])
 # preparing data sets
 print("Preparing datasets...")
 train_set = TaskOrganizedDataset(join(data_folder, 'train'),
+                                 concept_size=opts['n_concepts'],
                                  supervised_only=opts['supervised_only'],
                                  max_buffer_size=opts['replay_buffer'],   # memory buffer for experience replay
                                  concept_extractor=symbol_to_concepts,
                                  triplet_annotator=annotate_triplet_labels)
 val_set = TaskOrganizedDataset(join(data_folder, 'val'),
+                               concept_size=opts['n_concepts'],
                                supervised_only=opts['supervised_only'],
                                concept_extractor=symbol_to_concepts,
                                triplet_annotator=annotate_triplet_labels)
 test_set = TaskOrganizedDataset(join(data_folder, 'test'),
+                                concept_size=opts['n_concepts'],
                                 supervised_only=opts['supervised_only'],
                                 concept_extractor=symbol_to_concepts,
                                 triplet_annotator=annotate_triplet_labels)
 
-opts["n_concepts"] = len(train_set[0][3]) # Deduce concept number from the first element in the training set.
+# opts["n_concepts"] = len(train_set[0][3]) # Deduce concept number from the first element in the training set.
 
 
 # creating network

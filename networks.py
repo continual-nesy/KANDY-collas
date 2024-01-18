@@ -9,50 +9,6 @@ from torchvision.models import ViT_B_16_Weights
 
 from cem.models.cem import ConceptEmbeddingModel
 
-#
-# class SaturatingSgn(nn.Module):
-#     def forward(self, input):
-#         return torch.sign(input)
-#     def backward(self, grad_output):
-#         return torch.tanh.grad(grad_output)
-#
-# class NonSaturatingSgn(nn.Module):
-#     def forward(self, input):
-#         return torch.sign(input)
-#     def backward(self, grad_output):
-#         return grad_output
-#
-# class ReSgn(nn.Module):
-#     def forward(self, input):
-#         return torch.sign(input)
-#     def backward(self, grad_output):
-#         return torch.relu.grad(grad_output)
-#
-#
-# class DiscreteLatentModel(nn.Module):
-#     def __init__(self, backbone, num_outputs, bottleneck_size=8, activation="non-sat"):
-#         assert activation in ["non-sat", "sat", "rect"]
-#
-#         super().__init__()
-#
-#         self.backbone = backbone
-#         self.discrete_layer = nn.LazyLinear(bottleneck_size)
-#
-#         if activation == "non-sat":
-#             self.discrete_act = NonSaturatingSgn()
-#         elif activation == "sat":
-#             self.discrete_act = SaturatingSgn()
-#         else:
-#             self.discrete_act = ReSgn()
-#
-#         self.logits = nn.Linear(bottleneck_size, num_outputs)
-#     def forward(self, x):
-#         x = self.backbone(x)
-#         x = self.discrete_layer(x)
-#         latent = self.discrete_act(x)
-#         logits = self.logits(latent)
-#
-#         return latent, logits
 
 def generate_backbone(backbone_name: str, input_shape: tuple | list) -> callable:
     def f(output_dim):

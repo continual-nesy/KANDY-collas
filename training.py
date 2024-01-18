@@ -2,12 +2,16 @@ import torch
 import copy
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset import TaskOrganizedDataset
-from utils import compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics, HammingDistance
+from utils import (compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics,
+                   HammingDistance, MaskedTripletMarginLoss)
 
 import pytorch_metric_learning.losses, pytorch_metric_learning.miners
-import cem.metrics.accs
+# import cem.metrics.accs
 # TODO: cas and oracle require tensorflow because they build keras models...Reimplement them in torch?
-#       niching uses predict_proba() (it's a sklearn/keras model)
+#       niching uses predict_proba() (it's a sklearn model)
+from metrics import concept_alignment_score, niche_impurity_score, oracle_impurity_score
+
+import random
 
 def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
           train_set: TaskOrganizedDataset,
@@ -90,13 +94,17 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     replay_set_data_loader = None
     replay_set_iter = None
 
-    hamming_loss_fn = pytorch_metric_learning.losses.TripletMarginLoss(
+    distance_fn = HammingDistance(emb_type='01', use_mask=opts['use_mask'])
+    hamming_loss_fn = MaskedTripletMarginLoss(
                                                         margin=opts['hamming_margin'],
-                                                        distance=HammingDistance('01'),
+                                                        distance=distance_fn,
                                                         reducer=pytorch_metric_learning.reducers.AvgNonZeroReducer())
+
     mining_fn = pytorch_metric_learning.miners.TripletMarginMiner(margin=opts['hamming_margin'],
-                                                       distance=HammingDistance('01'),
-                                                       type_of_triplets="semihard")
+                                                                  distance=HammingDistance('01', use_mask='no'),
+                                                                  type_of_triplets="semihard")
+    # For simplicity, the miner does not use any mask to extract triples.
+
 
 
     # loop on the provided training sets
@@ -143,12 +151,12 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             # loop on training samples
             n = 0
             avg_loss = 0.
-            for (x, y, _, concepts, eq_classes, zero_based_train_task_id, abs_idx) in train_set_data_loader:
+            for (x, y, _, true_concepts, stored_concepts, eq_classes, zero_based_train_task_id, abs_idx) in train_set_data_loader:
 
                 # moving data and casting
                 x = x.to(opts['device'])
                 y = y.to(torch.float32).to(opts['device'])
-                c = concepts.to(torch.float32).to(opts['device'])
+                # c = concepts.to(torch.float32).to(opts['device'])
 
                 # prediction
                 c_pred, c_embs, o = net(x)
@@ -159,46 +167,138 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
 
                 # loss evaluation (from raw outputs)
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean')
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean') # Task loss.
 
-                if opts['concept_lambda'] > 0.:
-                    loss += opts['concept_lambda'] * torch.nn.functional.binary_cross_entropy(c_pred, c, reduction='mean')
+                positive_samples = torch.nonzero(y == 1).reshape((-1,))
+
+                if opts['concept_lambda'] > 0. and opts['min_pos_concepts'] > 0:
+                    loss += opts['concept_lambda'] * \
+                            torch.mean(torch.max(
+                                torch.zeros(c_pred[positive_samples].shape[0]).to(opts['device']),
+                                torch.sum(c_pred[positive_samples]) - \
+                                torch.tensor(opts['min_pos_concepts']).to(torch.float).to(opts['device'])))
+
+                if opts['concept_polarization_lambda'] > 0.:
+                    loss += -opts['concept_polarization_lambda'] * \
+                            torch.nn.functional.l1_loss(c_pred,
+                                                        torch.ones(c_pred.shape).to(opts['device']) * .5,
+                                                        reduction="mean")
+
+
+                if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy':
+                    mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
+                    loss += -opts['mask_polarization_lambda'] * \
+                            torch.nn.functional.l1_loss(mask,
+                                                        torch.ones(mask.shape).to(opts['device']) * .5,
+                                                        reduction="mean")
 
                 # Hamming loss:
                 if opts['triplet_lambda'] > 0.:
-                    indices_tuple = mining_fn(c_pred, eq_classes)
-                    loss += opts['triplet_lambda'] * hamming_loss_fn(c_pred, eq_classes, indices_tuple)
+                    if opts['batch'] > 3:
+                        indices_tuple = mining_fn(c_pred, eq_classes)
+                        triplet_loss = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
+                                                        positives=c_pred[positive_samples])
+
+
+                    if opts['replay_buffer'] > 2:
+                        if len(train_set.buffered_indices) > 0 and \
+                            train_task_id in train_set.task2buffered_positives and \
+                            train_task_id in train_set.task2buffered_negatives:
+
+                            triplet_p = torch.zeros(c_pred.shape, dtype=torch.float)
+                            triplet_n = torch.zeros(c_pred.shape, dtype=torch.float)
+
+                            buffered_p = torch.zeros(c_pred.shape, dtype=torch.float) # Positives in buffer for mask re-computation
+
+                            for i, yy in enumerate(y.to(torch.bool).cpu().numpy()):
+                                if yy:
+                                    triplet_p[i,:] = random.choice(train_set.task2buffered_positives[train_task_id])
+                                    triplet_n[i,:] = random.choice(train_set.task2buffered_negatives[train_task_id])
+                                    buffered_p[i, :] = triplet_p[i,:]
+                                else:
+                                    triplet_n[i, :] = random.choice(train_set.task2buffered_positives[train_task_id])
+                                    triplet_p[i, :] = random.choice(train_set.task2buffered_negatives[train_task_id])
+                                    buffered_p[i, :] = triplet_n[i, :]
+
+                            triplet_p = triplet_p.to(opts['device'])
+                            triplet_n = triplet_n.to(opts['device'])
+                            buffered_p = buffered_p.to(opts['device']).detach()
+
+                            if opts['use_mask'] == 'crisp':
+                                _, mask = distance_fn.soft_intersection(buffered_p)
+                            elif opts['use_mask'] == 'fuzzy':
+                                mask, _ = distance_fn.soft_intersection(buffered_p)
+                            else:
+                                mask = None
+
+                            ap = distance_fn.hamming_distance_01_masked(c_pred, triplet_p, mask)
+                            an = distance_fn.hamming_distance_01_masked(c_pred, triplet_n, mask)
+
+
+                            current_margins = distance_fn.margin(ap, an)
+                            violation = current_margins + hamming_loss_fn.margin
+
+
+                            if hamming_loss_fn.smooth_loss:
+                                loss_mat = torch.nn.functional.softplus(violation)
+                            else:
+                                loss_mat = torch.nn.functional.relu(violation)
+
+                            triplet_loss += torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction
+
+                            # possibly storing the current example(s) to the memory buffer
+                            added_something = False
+
+                            for i, abs_j in enumerate(abs_idx):
+                                if opts['store_fuzzy']:
+                                    added_something = train_set.buffer_sample(abs_j.item(), c_pred[i, :],
+                                                                              opts['balance']) or added_something
+                                else:
+                                    added_something = train_set.buffer_sample(abs_j.item(),
+                                                                              torch.gt(c_pred[i, :], 0.5).to(torch.int),
+                                                                              opts['balance']) or added_something
+
+                    if opts['triplet_lambda'] > 0. and opts['replay_buffer'] > 2:
+                        loss += opts['triplet_lambda'] + triplet_loss / 2.
+                    else:
+                        loss += opts['triplet_lambda'] + triplet_loss
 
                 # experience replay
-                if opts['replay_buffer'] > 0 and opts['replay_lambda'] > 0.:
+                if opts['replay_buffer'] > 0:
+                    if opts['replay_lambda'] > 0.:
 
-                    # if something is already stored into the memory buffer...
-                    if len(train_set.buffered_indices) > 0:
+                        # if something is already stored into the memory buffer...
+                        if len(train_set.buffered_indices) > 0:
 
-                        # getting a batch from the memory buffer
-                        try:
-                            x, y, _, zero_based_train_task_id, _ = next(replay_set_iter)
-                        except StopIteration:
-                            replay_set_iter = iter(replay_set_data_loader)
-                            x, y, _, zero_based_train_task_id, _ = next(replay_set_iter)
+                            # getting a batch from the memory buffer
+                            try:
+                                x_buff, y_buff, _, _, _, _, zero_based_train_task_id, _ = next(replay_set_iter)
+                            except StopIteration:
+                                replay_set_iter = iter(replay_set_data_loader)
+                                x_buff, y_buff, _, _, _, _, zero_based_train_task_id, _ = next(replay_set_iter)
 
-                        # moving experiences and casting
-                        x = x.to(opts['device'])
-                        y = y.to(torch.float32).to(opts['device'])
-                        zero_based_train_task_id = zero_based_train_task_id.to(opts['device'])
+                            # moving experiences and casting
+                            x_buff = x_buff.to(opts['device'])
+                            y_buff = y_buff.to(torch.float32).to(opts['device'])
+                            zero_based_train_task_id = zero_based_train_task_id.to(opts['device'])
 
-                        # prediction on selected experiences (they might belong to different tasks)
-                        c_pred, c_embs, o = net(x)
-                        o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
+                            # prediction on selected experiences (they might belong to different tasks)
+                            c_pred_buff, c_embs_buff, o = net(x_buff)
+                            o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
 
-                        # loss evaluation on the retrieved experiences (from raw outputs)
-                        loss += opts['replay_lambda'] * \
-                            torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean')
+                            # loss evaluation on the retrieved experiences (from raw outputs)
+                            loss += opts['replay_lambda'] * \
+                                torch.nn.functional.binary_cross_entropy_with_logits(o, y_buff, reduction='mean')
 
                     # possibly storing the current example(s) to the memory buffer
                     added_something = False
-                    for abs_j in abs_idx:
-                        added_something = train_set.buffer_sample(abs_j.item(), opts['balance']) or added_something
+
+                    for i, abs_j in enumerate(abs_idx):
+                        if opts['store_fuzzy']:
+                            added_something = train_set.buffer_sample(abs_j.item(), c_pred[i,:], opts['balance']) or added_something
+                        else:
+                            added_something = train_set.buffer_sample(abs_j.item(), torch.gt(c_pred[i, :], 0.5).to(torch.int),
+                                                                      opts['balance']) or added_something
 
                     # if the buffer changed, re-create the data sampler
                     if added_something:

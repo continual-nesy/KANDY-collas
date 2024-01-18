@@ -10,7 +10,11 @@ from datetime import datetime
 from torch.utils.data import DataLoader
 from dataset import TaskOrganizedDataset
 
-import pytorch_metric_learning.distances
+import pytorch_metric_learning.distances, pytorch_metric_learning.losses
+from pytorch_metric_learning.utils import common_functions as c_f
+from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
+
+from pytorch_lightning import seed_everything
 
 class ArgNumber:
     """Implement the notion of 'number' when passed as input argument to the program, deeply checking it.
@@ -154,6 +158,8 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    c_f.NUMPY_RANDOM = np.random.RandomState(seed)
+    seed_everything(seed)
 
 
 def elapsed_time(from_seconds: float, to_seconds: float) -> str:
@@ -305,7 +311,7 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
             y = []
 
             # looping on data
-            for (_x, _y, _, _, _, _, _) in data_loader:
+            for (_x, _y, _true_c, _, _, _, _, _) in data_loader:
 
                 # predicting and saving result (cpu)
                 c_pred, c_embs, oo = net(_x.to(device))
@@ -391,45 +397,181 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
 
 
 class HammingDistance(pytorch_metric_learning.distances.BaseDistance):
-    def __init__(self, emb_type='01'):
-        super().__init__(collect_stats = False,
-                        normalize_embeddings=True,
+    def __init__(self, emb_type='01', use_mask='fuzzy'):
+        super().__init__(collect_stats=False,
+                        normalize_embeddings=False,
                         p=2,
                         power=1,
                         is_inverted=False)
         assert emb_type in ['01', '11']
+        assert use_mask in ['no', 'crisp', 'fuzzy']
         self.emb_type = emb_type
+        self.use_mask = use_mask
 
-    # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains 0 or 1.
-    # https://dl.acm.org/doi/pdf/10.1145/3532624
-    def hamming_distance_matrix_01(self, x, y):
-        # Todo: are shapes correct? (batch, emb) -> (batch, batch)
-        return torch.linalg.norm(x[:, None, :] - y[None, :, :], ord=1, axis=-1)
+    # # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains 0 or 1.
+    # # https://dl.acm.org/doi/pdf/10.1145/3532624
+    # def hamming_distance_matrix_01(self, x, y):
+    #     return torch.linalg.norm(x[:, None, :] - y[None, :, :], ord=1, axis=-1)
+    #
+    # # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains -1 or +1.
+    # # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
+    # def hamming_distance_matrix_11(self, x, y):
+    #     bitsize = x.shape[-1]
+    #     return 0.5 * (bitsize - torch.matmul(x, y.T))
+    #
+    # # Computes pairwise Hamming distance between two embeddings bounded in [0, 1].
+    # def hamming_distance_pairwise_01(self, a, b):
+    #     return torch.linalg.norm(a - b, ord=1, axis=-1)
+    #
+    # # Computes pairwise Hamming distance between two embeddings bounded in [-1, +1].
+    # # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
+    # def hamming_distance_pair_11(self, a, b):
+    #     bitsize = a.shape[-1]
+    #     return 0.5 * (bitsize - torch.matmul(a, b.T))
 
-    # Computes pairwise Hamming distances between an array of codes (shape: (n, binary code)). The second dimension contains -1 or +1.
-    # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
-    def hamming_distance_matrix_11(self, x, y):
-        # Todo: are shapes correct? (batch, emb) -> (batch, batch)
-        bitsize = x.shape[-1]
-        return 0.5 * (bitsize - torch.matmul(x, y.T))
+    def soft_intersection(self, x):
+        neg_x = 1. - x
+        pairwise_prod = x[:, None, :] * x[None, :, :]
+        neg_pairwise_prod = neg_x[:, None, :] * neg_x[None, :, :]
+        pairwise_int = torch.gt(pairwise_prod, 0.5)
+        neg_pairwise_int = torch.gt(neg_pairwise_prod, 0.5)
 
-    # Computes pairwise Hamming distance between two embeddings bounded in [0, 1].
-    def hamming_distance_pairwise_01(self, a, b):
-        return torch.linalg.norm(a - b, ord=1, axis=-1)
+        mask = pairwise_prod + neg_pairwise_prod
+        mask = torch.mean(mask.to(torch.float), dim=[0, 1])
 
-    # Computes pairwise Hamming distance between two embeddings bounded in [-1, +1].
-    # IMPORTANT: for fuzzy values, it behaves worse than hamming_distance_matrix_01 (the most important issue being the fact that the diagonal is not zero for non-crisp values).
-    def hamming_distance_pair_11(self, a, b):
-        bitsize = a.shape[-1]
-        return 0.5 * (bitsize - torch.matmul(a, b.T))
+        binary_mask = pairwise_int + neg_pairwise_int
+        binary_mask = torch.max(torch.min(binary_mask.to(torch.float), dim=1).values, dim=0).values
 
-    def compute_mat(self, query_emb, ref_emb):
-        if self.emb_type == '01':
-            return self.hamming_distance_matrix_01(query_emb, ref_emb)
+        return mask, binary_mask
+
+    # def hamming_similarity_01_masked(self, x, mask=None):
+    #     if mask is None:
+    #         return x.shape[-1] - torch.linalg.norm(x[:, None, :] - x[None, :, :], ord=1, axis=-1)
+    #     else:
+    #         if torch.sum(mask) == torch.sum(torch.gt(mask,
+    #                                                  0.5)):  # If the mask is crisp, the maximum similarity is the number of bits set to 1.
+    #             bitsize = torch.sum(mask)
+    #         else:  # Otherwise, the maximum is the entire bitword size.
+    #             bitsize = x.shape[-1]
+    #         return bitsize - torch.linalg.norm((x[:, None, :] - x[None, :, :]) * mask, ord=1, axis=-1)
+
+    def hamming_distance_01_masked(self, x, y, mask=None):
+        if mask is None:
+            return torch.linalg.norm(x[:, None, :] - y[None, :, :], ord=1, axis=-1)
         else:
-            return self.hamming_distance_matrix_11(query_emb, ref_emb)
+            return torch.linalg.norm((x[:, None, :] - y[None, :, :]) * mask, ord=1, axis=-1)
+
+    def hamming_distance_11_masked(self, x, y, mask=None):
+        # TODO: check
+        bitsize = x.shape[-1]
+        if mask is None:
+            return 0.5 * (bitsize - torch.matmul(x, y.T))
+        else:
+            return 0.5 * (bitsize - torch.matmul(x, y.T) * mask)
+
+
+
+    def compute_mat(self, query_emb, ref_emb, positives=None):
+        assert self.use_mask == 'no' or positives is not None, "You need a tensor of positive embeddings if you want to use Hamming masks."
+        if self.use_mask == 'no':
+            mask = None
+        elif self.use_mask == 'crisp':
+            _, mask = self.soft_intersection(positives)
+        else:
+            mask, _ = self.soft_intersection(positives)
+
+        if self.emb_type == '01':
+            return self.hamming_distance_01_masked(query_emb, ref_emb, mask)
+        else:
+            return self.hamming_distance_11_masked(query_emb, ref_emb, mask)
 
     # Must return a tensor where output[j] represents
     # the distance/similarity between query_emb[j] and ref_emb[j]
     def pairwise_distance(self, query_emb, ref_emb):
         raise NotImplementedError
+
+    def forward(self, query_emb, ref_emb=None, positives=None):
+        self.reset_stats()
+        self.check_shapes(query_emb, ref_emb)
+        query_emb_normalized = self.maybe_normalize(query_emb)
+        if ref_emb is None:
+            ref_emb = query_emb
+            ref_emb_normalized = query_emb_normalized
+        else:
+            ref_emb_normalized = self.maybe_normalize(ref_emb)
+        self.set_default_stats(
+            query_emb, ref_emb, query_emb_normalized, ref_emb_normalized
+        )
+        mat = self.compute_mat(query_emb_normalized, ref_emb_normalized, positives)
+        if self.power != 1:
+            mat = mat**self.power
+        assert mat.size() == torch.Size((query_emb.size(0), ref_emb.size(0)))
+        return mat
+
+
+
+class MaskedTripletMarginLoss(pytorch_metric_learning.losses.TripletMarginLoss):
+    def __init__(self,
+        margin=0.05,
+        swap=False,
+        smooth_loss=False,
+        triplets_per_anchor="all",
+        **kwargs):
+        super().__init__(margin,
+        swap,
+        smooth_loss,
+        triplets_per_anchor,
+        **kwargs)
+
+    def compute_loss(self, embeddings, labels, indices_tuple, ref_emb, ref_labels, positives=None):
+        c_f.labels_or_indices_tuple_required(labels, indices_tuple)
+        indices_tuple = lmu.convert_to_triplets(
+            indices_tuple, labels, ref_labels, t_per_anchor=self.triplets_per_anchor
+        )
+        anchor_idx, positive_idx, negative_idx = indices_tuple
+        if len(anchor_idx) == 0:
+            return self.zero_losses()
+        mat = self.distance(embeddings, ref_emb, positives)
+        ap_dists = mat[anchor_idx, positive_idx]
+        an_dists = mat[anchor_idx, negative_idx]
+        if self.swap:
+            pn_dists = mat[positive_idx, negative_idx]
+            an_dists = self.distance.smallest_dist(an_dists, pn_dists)
+
+        current_margins = self.distance.margin(ap_dists, an_dists)
+        violation = current_margins + self.margin
+        if self.smooth_loss:
+            loss = torch.nn.functional.softplus(violation)
+        else:
+            loss = torch.nn.functional.relu(violation)
+
+        return {
+            "loss": {
+                "losses": loss,
+                "indices": indices_tuple,
+                "reduction_type": "triplet",
+            }
+        }
+
+    def forward(
+        self, embeddings, labels=None, indices_tuple=None, ref_emb=None, ref_labels=None, positives=None
+    ):
+        """
+        Args:
+            embeddings: tensor of size (batch_size, embedding_size)
+            labels: tensor of size (batch_size)
+            indices_tuple: tuple of size 3 for triplets (anchors, positives, negatives)
+                            or size 4 for pairs (anchor1, postives, anchor2, negatives)
+                            Can also be left as None
+        Returns: the loss
+        """
+        self.reset_stats()
+        c_f.check_shapes(embeddings, labels)
+        if labels is not None:
+            labels = c_f.to_device(labels, embeddings)
+        ref_emb, ref_labels = c_f.set_ref_emb(embeddings, labels, ref_emb, ref_labels)
+        loss_dict = self.compute_loss(
+            embeddings, labels, indices_tuple, ref_emb, ref_labels, positives
+        )
+        self.add_embedding_regularization_to_loss_dict(loss_dict, embeddings)
+        return self.reducer(loss_dict, embeddings, labels)

@@ -17,6 +17,7 @@ class TaskOrganizedDataset(Dataset):
                  data_folder: str,
                  concept_extractor: Any,
                  triplet_annotator: Any,
+                 concept_size: int,
                  task_ids: tuple[int, ...] | list[int, ...] | None = None,
                  supervised_only: bool = False,
                  transform: Any | None = None,
@@ -41,6 +42,7 @@ class TaskOrganizedDataset(Dataset):
         self.target_transform = target_transform
 
         self.buffered_indices = []
+        self.buffered_concepts = []
         self.samples_seen_so_far = 0
         self.task2buffered_positives = {}
         self.task2buffered_negatives = {}
@@ -58,13 +60,15 @@ class TaskOrganizedDataset(Dataset):
         self.task_ids.sort()
         self.num_tasks = len(self.task_ids)
 
+        self.concept_size = concept_size
+
         # mapping task to incremental, continuous, integers
         self.task2zero_based_index = {}
         for i, task_id in enumerate(self.task_ids):
             self.task2zero_based_index[task_id] = i
 
         # guessing shape of the input data
-        image, _, _, _, _, _, _ = self[0]
+        image, _, _, _, _, _, _, _ = self[0]
         self.input_shape = image.shape
 
         # cache
@@ -78,11 +82,11 @@ class TaskOrganizedDataset(Dataset):
 
         return len(self.annotations.index)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int, torch.Tensor, int, int, int]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int, int, torch.Tensor, torch.Tensor, int, int, int]:
         """Get the idx-th element of the dataset.
 
             :param idx: Integer index of the element to get.
-            :returns: A torch.Tensor (torch.uint8) without further rescaling; an integer label; concept labels (torch.Tensor torch.bool); the task ID;
+            :returns: A torch.Tensor (torch.uint8) without further rescaling; an integer label; concept labels (torch.Tensor torch.float); the task ID;
                 the sample ID.
         """
         annotation = self.annotations.iloc[idx]
@@ -97,11 +101,14 @@ class TaskOrganizedDataset(Dataset):
         if self.target_transform:
             label = self.target_transform(label)
 
-        concepts = torch.from_numpy(self.concept_extractor(annotation['symbol']))
+        true_concepts = torch.from_numpy(self.concept_extractor(annotation['symbol']))
+        if idx in self.buffered_indices:
+            stored_concepts = self.buffered_concepts[self.buffered_indices.index(idx)]
+        else:
+            stored_concepts = torch.zeros(self.concept_size) #torch.from_numpy(self.concept_extractor(annotation['symbol']))
         eq_classes = annotation['equivalence_class']
 
-
-        return image, label, task_id, concepts, eq_classes, zero_based_task_id, absolute_id
+        return image, label, task_id, true_concepts, stored_concepts, eq_classes, zero_based_task_id, absolute_id
 
     def __str__(self) -> str:
         """Collect dataset stats into a string.
@@ -134,7 +141,7 @@ class TaskOrganizedDataset(Dataset):
 
         return self.buffered_indices
 
-    def buffer_sample(self, idx: int, balanced: bool = False):
+    def buffer_sample(self, idx: int, c_pred: torch.Tensor, balanced: bool = False):
         """Possibly add a new example index to the list of buffered samples (reservoir sampling).
 
             :param idx: The index of the example.
@@ -154,6 +161,7 @@ class TaskOrganizedDataset(Dataset):
             # saving the given example to the buffer
             j = len(self.buffered_indices)
             self.buffered_indices.append(idx)
+            self.buffered_concepts.append(c_pred)
             added = True
         else:
             j = random.randint(0, self.samples_seen_so_far)
@@ -199,6 +207,7 @@ class TaskOrganizedDataset(Dataset):
 
                 # saving the given example to the buffer
                 self.buffered_indices[j] = idx
+                self.buffered_concepts[j] = c_pred
                 added = True
 
         # recording the number of examples that were considered for buffering purposes so far
@@ -269,6 +278,7 @@ class TaskOrganizedDataset(Dataset):
             for task_id in self.task_ids:
                 single_task_dataset = TaskOrganizedDataset(self.data_folder,
                                                            task_ids=(task_id,),
+                                                           concept_size=self.concept_size,
                                                            supervised_only=self.supervised_only,
                                                            transform=self.transform,
                                                            target_transform=self.target_transform,
