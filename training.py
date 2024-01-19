@@ -2,16 +2,11 @@ import torch
 import copy
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset import TaskOrganizedDataset
-from utils import (compute_accuracies, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics,
-                   HammingDistance, MaskedTripletMarginLoss)
+from utils import (compute_matrices, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics,
+                   HammingDistance, MaskedTripletMarginLoss, pearson_corr, matthews_corr)
 
 import pytorch_metric_learning.losses, pytorch_metric_learning.miners
-# import cem.metrics.accs
-# TODO: cas and oracle require tensorflow because they build keras models...Reimplement them in torch?
-#       niching uses predict_proba() (it's a sklearn model)
-from metrics import concept_alignment_score, niche_impurity_score, oracle_impurity_score
-
-import random
+from metrics import concept_alignment_score
 
 def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
           train_set: TaskOrganizedDataset,
@@ -81,10 +76,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'avg_forgetting': [-1.] * num_tasks,
         'backward_transfer': [-1.] * num_tasks,
         'forward_transfer': [-1.] * num_tasks,
-        'concept_avg_accuracy': [-1.] * num_tasks,
         'cas': [-1.] * num_tasks,
-        'ois': [-1.] * num_tasks,
-        'nis': [-1.] * num_tasks
+        'tas': [-1.] * num_tasks
     }
     metrics_val = copy.deepcopy(metrics_train)
     metrics_val['name'] = 'val'
@@ -106,6 +99,9 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                                                   type_of_triplets="semihard")
     # For simplicity, the miner does not use any mask to extract triples.
 
+    img, _, _, _, _, _, _, _ = train_set[0]
+    img_shape = img.shape
+    x_buff_batch = torch.zeros((opts['batch'], *img_shape), dtype=torch.float).to(opts['device'])
 
 
     # loop on the provided training sets
@@ -184,7 +180,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                                         reduction="mean")
 
 
-                if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy':
+                if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy' and len(positive_samples) > 0:
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
                     loss += -opts['mask_polarization_lambda'] * \
                             torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
@@ -197,8 +193,6 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                         triplet_loss = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
                                                         positives=c_pred[positive_samples])
 
-#########################################################################################################################################
-# TODO: Qualcosa non quadra da qui
                     if opts['replay_buffer'] > 2:
                         if len(train_set.buffered_indices) > 0 and \
                             train_task_id in train_set.task2buffered_positives and \
@@ -211,26 +205,18 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                             triplet_p = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
                             triplet_n = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
 
-                            buffered_p = torch.zeros(c_pred.shape, dtype=torch.float) # Positives in buffer for mask re-computation
-
                             for i in range(c_pred[positive_samples].shape[0]):
-                                _, _, _, _, triplet_p[i,:], _, _, _ = train_set[random.choice(train_set.task2buffered_positives[train_task_id])]
-                                _, _, _, _, triplet_n[i,:], _, _, _ = train_set[random.choice(train_set.task2buffered_negatives[train_task_id])]
-                                buffered_p[i, :] = triplet_p[i,:]
+                                _, _, _, _, triplet_p[i,:], _, _, _ = train_set.get_random_buffered_sample(train_task_id, True)
+                                _, _, _, _, triplet_n[i,:], _, _, _ = train_set.get_random_buffered_sample(train_task_id, False)
 
                             triplet_p = triplet_p.to(opts['device']).detach()
                             triplet_n = triplet_n.to(opts['device']).detach()
-                            buffered_p = buffered_p.to(opts['device']).detach()
-
-                            print(triplet_p)
-                            print(triplet_n)
-                            ERROR # TODO: Perché alcune entry sono zero, anche se prese da task2buffered_*???
 
 
                             if opts['use_mask'] == 'crisp':
-                                _, mask = distance_fn.soft_intersection(buffered_p)
+                                _, mask = distance_fn.soft_intersection(triplet_p)
                             elif opts['use_mask'] == 'fuzzy':
-                                mask, _ = distance_fn.soft_intersection(buffered_p)
+                                mask, _ = distance_fn.soft_intersection(triplet_p)
                             else:
                                 mask = None
 
@@ -248,21 +234,6 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                 loss_mat = torch.nn.functional.relu(violation)
 
                             triplet_loss += torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction
-
-# A qui
-#########################################################################################################################################
-
-                            # possibly storing the current example(s) to the memory buffer
-                            added_something = False
-
-                            for i, abs_j in enumerate(abs_idx):
-                                if opts['store_fuzzy']:
-                                    added_something = train_set.buffer_sample(abs_j.item(), c_pred[i, :],
-                                                                              opts['balance']) or added_something
-                                else:
-                                    added_something = train_set.buffer_sample(abs_j.item(),
-                                                                              torch.gt(c_pred[i, :], 0.5).to(torch.int),
-                                                                              opts['balance']) or added_something
 
                     if opts['triplet_lambda'] > 0. and opts['replay_buffer'] > 2:
                         loss += opts['triplet_lambda'] + triplet_loss / 2.
@@ -331,10 +302,30 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 loss.backward()
                 optimizer.step()
 
+            # On epoch end, update buffer representations:
+            with torch.no_grad():
+                if opts['replay_buffer'] > 0:
+                    for b in range(0, len(train_set.buffered_indices), opts['batch']):
+                        x_buff_batch[:,:,:,:] = 0.
+                        for i, idx in enumerate(train_set.buffered_indices[b:b+opts['batch']]):
+                            x_buff_batch[i, :, :, :], _, _, _, _, _, _, _ = train_set[idx]
+
+                        actual_imgs = len(train_set.buffered_indices[b:b+opts['batch']])
+                        c_pred, _, _ = net(x_buff_batch[:actual_imgs,:,:,:])
+                        c_pred.cpu()
+
+                        for i, idx in enumerate(train_set.buffered_indices[b:b+opts['batch']]):
+                            if opts['store_fuzzy']:
+                                train_set.update_representation(idx, c_pred[i,:])
+                            else:
+                                train_set.update_representation(idx, torch.gt(c_pred[i, :], 0.5))
+
+
         # standardizing data for evaluation purposes
         eval_task_id = train_task_id if opts['train'] != 'joint' else num_tasks - 1
         backup_train_set_transform = None
         acc_per_task = None
+        concept_vectors = None
         compute_metrics_on_train_data_too = False  # TODO turn this on again (turned off to speed-up experiments)
 
         # evaluation (validation set -with decision threshold tuning-, training set, test set)
@@ -349,7 +340,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             # computing accuracies
             if compute_metrics_on_train_data_too or eval_set != train_set:
                 print("Computing metrics on " + metrics['name'] + " data...")
-                acc_per_task = compute_accuracies(net if opts['train'] != 'independent' else independent_nets,
+                acc_per_task, concept_vectors = compute_matrices(net if opts['train'] != 'independent' else independent_nets,
                                                   eval_set,
                                                   batch_size=32,
                                                   device=opts['device'],
@@ -376,10 +367,21 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             metrics['backward_transfer'][eval_task_id] = backward_transfer(acc_matrix_so_far)
             metrics['forward_transfer'][eval_task_id] = forward_transfer(acc_matrix_so_far)
 
-            metrics['concept_avg_accuracy'][eval_task_id] = 0
-            metrics['cas'][eval_task_id] = 0
-            metrics['ois'][eval_task_id] = 0
-            metrics['nis'][eval_task_id] = 0
+            if concept_vectors is None:
+                metrics['cas'][eval_task_id] = 0
+                metrics['tas'][eval_task_id] = 0
+            else:
+
+
+                metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(c_vec=concept_vectors[eval_task_id]['c_embs'],
+                                                                       c_test=concept_vectors[eval_task_id]['c_true'],
+                                                                       y_test=concept_vectors[eval_task_id]['pseudo_y'],
+                                                                       step=5)
+
+                true_concept_len = concept_vectors[eval_task_id]['c_true'].shape[1]
+                if eval_task_id == num_tasks - 1:
+                    metrics['concept_correlation_pearson'] = pearson_corr(**concept_vectors[eval_task_id])
+                    metrics['concept_correlation_phi'] = matthews_corr(**concept_vectors[eval_task_id])
 
             # fixing the 'joint' case (in a nutshell: repeating the same results many times to fill up the arrays)
             if opts['train'] == 'joint':
@@ -387,10 +389,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 metrics['avg_forgetting'][0:-1] = [metrics['avg_forgetting'][-1]] * (num_tasks - 1)
                 metrics['backward_transfer'][0:-1] = [metrics['backward_transfer'][-1]] * (num_tasks - 1)
                 metrics['forward_transfer'][0:-1] = [metrics['forward_transfer'][-1]] * (num_tasks - 1)
-                metrics['concept_avg_accuracy'][0:-1] = [metrics['concept_avg_accuracy'][-1]] * (num_tasks - 1)
                 metrics['cas'][0:-1] = [metrics['cas'][-1]] * (num_tasks - 1)
-                metrics['ois'][0:-1] = [metrics['ois'][-1]] * (num_tasks - 1)
-                metrics['nis'][0:-1] = [metrics['nis'][-1]] * (num_tasks - 1)
+                metrics['tas'][0:-1] = [metrics['tas'][-1]] * (num_tasks - 1)
 
             # printing
             print_metrics(metrics, train_task_id + 1)
@@ -408,4 +408,15 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     metrics_val['acc_matrix'] = metrics_val['acc_matrix'].numpy().tolist()
     metrics_test['acc_matrix'] = metrics_test['acc_matrix'].numpy().tolist()
 
-    return metrics_train, metrics_val, metrics_test
+    metrics_train['concept_correlation_pearson'] = metrics_train['concept_correlation_pearson'].tolist()
+    metrics_val['concept_correlation_pearson'] = metrics_val['concept_correlation_pearson'].tolist()
+    metrics_test['concept_correlation_pearson'] = metrics_test['concept_correlation_pearson'].tolist()
+
+    metrics_train['concept_correlation_phi'] = metrics_train['concept_correlation_phi'].tolist()
+    metrics_val['concept_correlation_phi'] = metrics_val['concept_correlation_phi'].tolist()
+    metrics_test['concept_correlation_phi'] = metrics_test['concept_correlation_phi'].tolist()
+
+    concept_names = ["t_{}".format(i) for i in range(true_concept_len)]
+    concept_names.extend(["p_{}".format(i) for i in range(opts['n_concepts'])])
+
+    return metrics_train, metrics_val, metrics_test, concept_names

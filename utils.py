@@ -16,6 +16,8 @@ from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
 
 from pytorch_lightning import seed_everything
 
+from sklearn.metrics import matthews_corrcoef
+
 class ArgNumber:
     """Implement the notion of 'number' when passed as input argument to the program, deeply checking it.
     It also checks if the number falls in a given range."""
@@ -260,7 +262,7 @@ def forward_transfer(acc_matrix: torch.Tensor) -> float:
         return _fwd.item()
 
 
-def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
+def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                        dataset: TaskOrganizedDataset,
                        batch_size: int = 16,
                        device: str = 'cpu',
@@ -289,11 +291,23 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
         one_net_per_task = isinstance(net, (tuple, list))
         independent_nets = net if one_net_per_task else None
 
+        concept_vectors = []
+
         assert not one_net_per_task or len(task_datasets) == len(independent_nets), \
             "The number of tasks must be equal to the number of nets."
 
+        _x, _y, _, _c_true, _, _, _, _ = dataset[0]
+        _c_pred, _c_embs, _ = net(_x[None,:,:,:].to(device))
+
         # looping on the datasets of each task
         for task_id, task_dataset in enumerate(task_datasets):
+            concept_vectors.append({"y_true": np.empty((0, 1), dtype=int),
+                           "task_id": np.empty((0, 1), dtype=int),
+                           "pseudo_y": np.empty((0, 1), dtype=int),
+                           "c_true": np.empty((0, _c_true.shape[0]), dtype=bool),
+                           "c_pred": np.empty((0, _c_pred.shape[1]), dtype=float),
+                           "c_embs": np.empty((0, _c_embs.shape[1]), dtype=float),
+                           })
 
             # selecting the right network
             net = independent_nets[task_id] if one_net_per_task else net
@@ -311,13 +325,23 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
             y = []
 
             # looping on data
-            for (_x, _y, _true_c, _, _, _, _, _) in data_loader:
+            for (_x, _y, _, _true_c, _, _, _, _) in data_loader:
 
                 # predicting and saving result (cpu)
                 c_pred, c_embs, oo = net(_x.to(device))
                 _o = torch.sigmoid(oo)  # sigmoid here, warning!
                 o.append(_o[:, task_id].cpu() if _o.shape[1] > 1 else _o[:, 0].cpu())
                 y.append(_y)
+
+
+                concept_vectors[-1]['y_true'] = np.concatenate([concept_vectors[-1]['y_true'], _y[:,None].numpy()], axis=0)
+                concept_vectors[-1]['task_id'] = np.concatenate([concept_vectors[-1]['task_id'], np.ones((_y.shape[0], 1), dtype=np.int32) * task_id], axis=0)
+                concept_vectors[-1]['c_true'] = np.concatenate([concept_vectors[-1]['c_true'], _true_c.numpy()], axis=0)
+                concept_vectors[-1]['c_pred'] = np.concatenate([concept_vectors[-1]['c_pred'], c_pred.cpu().numpy()], axis=0)
+                concept_vectors[-1]['c_embs'] = np.concatenate([concept_vectors[-1]['c_embs'], c_embs.cpu().numpy()], axis=0)
+
+                concept_vectors[-1]['pseudo_y'] = np.squeeze(2 * np.array(concept_vectors[-1]['task_id']) + np.array(
+                    concept_vectors[-1]['y_true']))
 
             # merging results
             o = torch.concat(o, dim=0)
@@ -348,7 +372,25 @@ def compute_accuracies(net: torch.nn.Module | list[torch.nn.Module] | tuple[torc
             # moving the network back to CPU to free GPU memory, if needed
             if one_net_per_task:
                 net.cpu()
-        return accuracies_per_task
+        return accuracies_per_task, concept_vectors
+
+def pearson_corr(c_true, c_pred, **kwargs):
+    samples = np.hstack([c_true.astype(float), c_pred.astype(float)])
+    return np.corrcoef(samples, rowvar=False)
+
+def matthews_corr(c_true, c_pred, **kwargs):
+    c_pred = c_pred > 0.5
+
+    samples = np.hstack([c_true, c_pred])
+
+    out = np.zeros((samples.shape[1], samples.shape[1]), dtype=float)
+
+    for i in range(out.shape[1]):
+        for j in range(out.shape[1]):
+            out[i,j] = matthews_corrcoef(samples[:,i], samples[:,j])
+
+
+    return out
 
 
 # print metrics (named with string _name) computed right after having processed a given distribution (_distribution)
@@ -385,11 +427,8 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     s += "avg_forgetting: {:.2f}".format(metrics['avg_forgetting'][tasks_seen_so_far - 1]) + ", "
     s += "backward_transfer: {:.2f}".format(metrics['backward_transfer'][tasks_seen_so_far - 1]) + ", "
     s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1]) + ", "
-
-    s += "concept_avg_accuracy: {:.2f}".format(metrics['concept_avg_accuracy'][tasks_seen_so_far - 1]) + ", "
     s += "cas: {:.2f}".format(metrics['cas'][tasks_seen_so_far - 1]) + ", "
-    s += "ois: {:.2f}".format(metrics['ois'][tasks_seen_so_far - 1]) + ", "
-    s += "nis: {:.2f}".format(metrics['nis'][tasks_seen_so_far - 1])
+    s += "tas: {:.2f}".format(metrics['tas'][tasks_seen_so_far - 1])
     print(s)
 
 

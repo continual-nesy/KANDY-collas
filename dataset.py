@@ -287,6 +287,20 @@ class TaskOrganizedDataset(Dataset):
                 self.task_datasets.append(single_task_dataset)
         return self.task_datasets
 
+    def get_random_buffered_sample(self, task_id, positive):
+        if positive:
+            idx = random.choice(self.task2buffered_positives[task_id])
+        else:
+            idx = random.choice(self.task2buffered_negatives[task_id])
+
+        return self.__getitem__(self.buffered_indices[idx])
+
+    def update_representation(self, idx, c_pred):
+        assert c_pred.shape == self.buffered_concepts[self.buffered_indices.index(idx)].shape
+
+        # TODO: out of memory
+        self.buffered_concepts[self.buffered_indices.index(idx)] = c_pred # OUT OF MEMORY!!!
+
     def __load_annotations(self) -> \
             tuple[pd.DataFrame, dict[int, int], dict[int, int], dict[int, list[int]], dict[int, list[int]]]:
         """Load and check the contents of the annotations.csv file in the data folder, ensuring data is present.

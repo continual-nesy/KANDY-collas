@@ -207,18 +207,19 @@ test_set.transform = eval_transforms
 # running experiment
 start_time = time.time()
 print("Running the training procedure (" + opts['train'] + ")...")
-metrics_train, metrics_val, metrics_test = train(net, train_set, val_set, test_set, opts)
+metrics_train, metrics_val, metrics_test, concept_names = train(net, train_set, val_set, test_set, opts)
 
 # logging to W&B
 if wb is not None:
     print("Logging to W&B...")
+
     for i in range(0, train_set.num_tasks):
-        for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer',
-                           'concept_avg_accuracy', 'cas', 'ois', 'nis']:
+        for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer', 'cas', 'tas']:
             wb.log(data={score_name + "-" + metrics_train['name']: metrics_train[score_name][i],
                          score_name + "-" + metrics_val['name']: metrics_val[score_name][i],
                          score_name + "-" + metrics_test['name']: metrics_test[score_name][i]},
                    step=i)
+
 
     columns = ["@"] + ["eval_" + str(i) for i in range(0, train_set.num_tasks)]
     score_name = 'acc_matrix'
@@ -226,6 +227,15 @@ if wb is not None:
         scores = metrics[score_name]
         tab = wandb.Table(columns=columns, data=[["train_" + str(i)] + row for i, row in enumerate(scores)])
         wb.log({score_name + "-" + metrics['name']: tab})
+
+    columns = ["x"] + concept_names
+    for metrics in [metrics_train, metrics_val, metrics_test]:
+        for score_name in ['concept_correlation_pearson', 'concept_correlation_phi']:
+            scores = metrics[score_name]
+
+            tab = wandb.Table(columns=columns, data=[[concept_names[j]] + row for j, row in enumerate(scores)])
+            wb.log({score_name + "-" + metrics['name']: tab})
+
 
     wb.finish()
 

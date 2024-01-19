@@ -7,7 +7,7 @@ commands = [
     "--cem_emb_size 12 --hamming_margin 8 --triplet_lambda 1.0 --concept_lambda 0.01 --use_mask fuzzy "
     "--concept_polarization_lambda 0.01 --mask_polarization_lambda 0.01 --min_pos_concepts 3 --n_concepts 20 "
     "--model cnn --output_folder exp --balance true --replay_buffer 100 --replay_lambda 0. --lr -0.0001 "
-    "--store_fuzzy yes --device cuda:0",
+    "--store_fuzzy yes --device cuda:0 ",
 ]
 
 for command in commands:
