@@ -101,6 +101,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
     img, _, _, _, _, _, _, _ = train_set[0]
     img_shape = img.shape
+
     x_buff_batch = torch.zeros((opts['batch'], *img_shape), dtype=torch.float).to(opts['device'])
 
 
@@ -306,12 +307,15 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             with torch.no_grad():
                 if opts['replay_buffer'] > 0:
                     for b in range(0, len(train_set.buffered_indices), opts['batch']):
-                        x_buff_batch[:,:,:,:] = 0.
+                        if opts['model'] == 'mlp':
+                            x_buff_batch[:,:] = 0.
+                        else:
+                            x_buff_batch[:,:,:,:] = 0.
                         for i, idx in enumerate(train_set.buffered_indices[b:b+opts['batch']]):
-                            x_buff_batch[i, :, :, :], _, _, _, _, _, _, _ = train_set[idx]
+                            x_buff_batch[i], _, _, _, _, _, _, _ = train_set[idx]
 
                         actual_imgs = len(train_set.buffered_indices[b:b+opts['batch']])
-                        c_pred, _, _ = net(x_buff_batch[:actual_imgs,:,:,:])
+                        c_pred, _, _ = net(x_buff_batch[:actual_imgs])
                         c_pred.cpu()
 
                         for i, idx in enumerate(train_set.buffered_indices[b:b+opts['batch']]):

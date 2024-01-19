@@ -297,7 +297,7 @@ def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.
             "The number of tasks must be equal to the number of nets."
 
         _x, _y, _, _c_true, _, _, _, _ = dataset[0]
-        _c_pred, _c_embs, _ = net(_x[None,:,:,:].to(device))
+        _c_pred, _c_embs, _ = net(torch.unsqueeze(_x, 0).to(device))
 
         # looping on the datasets of each task
         for task_id, task_dataset in enumerate(task_datasets):

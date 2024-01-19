@@ -140,10 +140,10 @@ assert (opts['train'] == 'continual_online' and opts['balance'] is True and opts
                                             "(options: 'train') proceeds in a way that is different from " \
                                             "'continual_online' or, in case of 'continual_online, " \
                                             "if a replay buffer is used."
-assert opts['replay_buffer'] == 0 or (opts['train'] == 'continual_task' or opts['train'] == 'continual_online'), \
-    "You can only use a replay buffer when the training method ('train') is 'continual_task' or 'continual_online'"
-assert opts['replay_buffer'] == 0 or opts['replay_lambda'] + opts['triplet_lambda'] > 0., \
-    "The 'replay_lambda' coefficient must be > 0., otherwise 'replay_buffer' will have no effects."
+#assert opts['replay_buffer'] == 0 or (opts['train'] == 'continual_task' or opts['train'] == 'continual_online'), \
+#    "You can only use a replay buffer when the training method ('train') is 'continual_task' or 'continual_online'"
+#assert opts['replay_buffer'] == 0 or opts['replay_lambda'] + opts['triplet_lambda'] > 0., \
+#    "The 'replay_lambda' coefficient must be > 0., otherwise 'replay_buffer' will have no effects."
 assert opts['replay_lambda'] == 0. or opts['replay_buffer'] > 0., \
     "The 'replay_buffer' must be > 0, otherwise 'replay_lambda' will have no effects."
 assert opts['replay_buffer'] + opts['batch'] >= 3, \
