@@ -376,12 +376,12 @@ def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.
 
 def pearson_corr(c_true, c_pred, **kwargs):
     samples = np.hstack([c_true.astype(float), c_pred.astype(float)])
+
     return np.corrcoef(samples, rowvar=False)
 
 def matthews_corr(c_true, c_pred, **kwargs):
     c_pred = c_pred > 0.5
-
-    samples = np.hstack([c_true, c_pred])
+    samples = np.hstack([c_true, c_pred]).astype(float)
 
     out = np.zeros((samples.shape[1], samples.shape[1]), dtype=float)
 

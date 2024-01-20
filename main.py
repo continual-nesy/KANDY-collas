@@ -10,7 +10,7 @@ from dataset import check_data_folder, TaskOrganizedDataset
 from utils import ArgNumber, ArgBoolean, save_dict, generate_experiment_name, set_seed, elapsed_time
 from networks import generate_net, save_net
 
-from background_knowledge import symbol_to_concepts, annotate_triplet_labels
+from background_knowledge import symbol_to_concepts, symbol_to_concepts2, annotate_triplet_labels
 
 # initial checks
 assert __name__ == "__main__", "Invalid usage! Run this script from command line, do not import it!"
@@ -163,17 +163,17 @@ train_set = TaskOrganizedDataset(join(data_folder, 'train'),
                                  concept_size=opts['n_concepts'],
                                  supervised_only=opts['supervised_only'],
                                  max_buffer_size=opts['replay_buffer'],   # memory buffer for experience replay
-                                 concept_extractor=symbol_to_concepts,
+                                 concept_extractor=symbol_to_concepts2,
                                  triplet_annotator=annotate_triplet_labels)
 val_set = TaskOrganizedDataset(join(data_folder, 'val'),
                                concept_size=opts['n_concepts'],
                                supervised_only=opts['supervised_only'],
-                               concept_extractor=symbol_to_concepts,
+                               concept_extractor=symbol_to_concepts2,
                                triplet_annotator=annotate_triplet_labels)
 test_set = TaskOrganizedDataset(join(data_folder, 'test'),
                                 concept_size=opts['n_concepts'],
                                 supervised_only=opts['supervised_only'],
-                                concept_extractor=symbol_to_concepts,
+                                concept_extractor=symbol_to_concepts2,
                                 triplet_annotator=annotate_triplet_labels)
 
 # opts["n_concepts"] = len(train_set[0][3]) # Deduce concept number from the first element in the training set.

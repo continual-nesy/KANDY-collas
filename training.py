@@ -175,20 +175,22 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                 torch.clamp(torch.sum(c_pred[positive_samples]) - float(opts['min_pos_concepts']), 0))
 
                 if opts['concept_polarization_lambda'] > 0.:
-                    loss += -opts['concept_polarization_lambda'] * \
-                            torch.nn.functional.l1_loss(c_pred,
+                    loss += opts['concept_polarization_lambda'] * \
+                            (1. - torch.nn.functional.l1_loss(c_pred,
                                                         zero_five[:c_pred.shape[0],:],
-                                                        reduction="mean")
+                                                        reduction="mean"))
 
 
                 if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy' and len(positive_samples) > 0:
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
-                    loss += -opts['mask_polarization_lambda'] * \
-                            torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
-                                                        reduction="mean")
+                    loss += opts['mask_polarization_lambda'] * \
+                            (1. - torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
+                                                        reduction="mean"))
 
                 # Hamming loss:
                 if opts['triplet_lambda'] > 0.:
+                    triplet_loss = 0.
+
                     if opts['batch'] > 3:
                         indices_tuple = mining_fn(c_pred, eq_classes)
                         triplet_loss = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,

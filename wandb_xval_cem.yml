@@ -4,13 +4,13 @@ method: random
 run_cap: 5000
 # name: misc
 project: kandy-cem
-name: cem_200x26_1.0-1.0
+name: easy_100x20_1.0-1.0
 metric:
   name: avg_accuracy-val
   goal: maximize
 parameters:
   data_path:
-    value: './data/cem_200x26_1.0-1.0/samples/sets'
+    value: './data/easy_100x20_1.0-1.0/samples/sets'
   seed:
     values: [1234, 5678, 9101]
   augment:
