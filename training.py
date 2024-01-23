@@ -77,12 +77,23 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'backward_transfer': [-1.] * num_tasks,
         'forward_transfer': [-1.] * num_tasks,
         'cas': [-1.] * num_tasks,
-        'tas': [-1.] * num_tasks
+        'tas': [-1.] * num_tasks,
     }
     metrics_val = copy.deepcopy(metrics_train)
     metrics_val['name'] = 'val'
     metrics_test = copy.deepcopy(metrics_train)
     metrics_test['name'] = 'test'
+
+    metrics_train['loss'] = []
+    metrics_train['cls_loss'] = []
+    metrics_train['concept_loss'] = []
+    metrics_train['concept_pol_loss'] = []
+    metrics_train['mask_pol_loss'] = []
+    metrics_train['triplet_loss_batch'] = []
+    metrics_train['triplet_loss_buffer'] = []
+    metrics_train['replay_loss'] = []
+
+
     optimizer = None
     replay_set_data_loader = None
     replay_set_iter = None
@@ -149,6 +160,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             # loop on training samples
             n = 0
             avg_loss = 0.
+            loss = 0.
             for (x, y, _, true_concepts, stored_concepts, eq_classes, zero_based_train_task_id, abs_idx) in train_set_data_loader:
 
                 # moving data and casting
@@ -165,27 +177,31 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
 
                 # loss evaluation (from raw outputs)
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean') # Task loss.
+                cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean') # Task loss.
+                loss += cls_loss
 
                 positive_samples = torch.nonzero(y == 1).reshape((-1,))
 
                 if opts['concept_lambda'] > 0. and opts['min_pos_concepts'] > 0:
-                    loss += opts['concept_lambda'] * \
-                            torch.mean(
+                    concept_loss = torch.mean(
                                 torch.clamp(torch.sum(c_pred[positive_samples]) - float(opts['min_pos_concepts']), 0))
+                    loss += opts['concept_lambda'] * concept_loss
+
 
                 if opts['concept_polarization_lambda'] > 0.:
-                    loss += opts['concept_polarization_lambda'] * \
-                            (1. - torch.nn.functional.l1_loss(c_pred,
+                    concept_pol_loss = (1. - torch.nn.functional.l1_loss(c_pred,
                                                         zero_five[:c_pred.shape[0],:],
                                                         reduction="mean"))
+                    loss += opts['concept_polarization_lambda'] * concept_pol_loss
+
 
 
                 if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy' and len(positive_samples) > 0:
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
-                    loss += opts['mask_polarization_lambda'] * \
-                            (1. - torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
+                    mask_pol_loss = (1. - torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
                                                         reduction="mean"))
+                    loss += opts['mask_polarization_lambda'] * mask_pol_loss
+
 
                 # Hamming loss:
                 if opts['triplet_lambda'] > 0.:
@@ -193,8 +209,10 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                     if opts['batch'] > 3:
                         indices_tuple = mining_fn(c_pred, eq_classes)
-                        triplet_loss = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
+                        triplet_loss_batch = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
                                                         positives=c_pred[positive_samples])
+
+                        triplet_loss += triplet_loss_batch
 
                     if opts['replay_buffer'] > 2:
                         if len(train_set.buffered_indices) > 0 and \
@@ -236,12 +254,14 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                             else:
                                 loss_mat = torch.nn.functional.relu(violation)
 
-                            triplet_loss += torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction
+                            triplet_loss_buffer = torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction.
+
+                            triplet_loss += triplet_loss_buffer
 
                     if opts['triplet_lambda'] > 0. and opts['replay_buffer'] > 2:
-                        loss += opts['triplet_lambda'] + triplet_loss / 2.
-                    else:
-                        loss += opts['triplet_lambda'] + triplet_loss
+                        triplet_loss /= 2.
+
+                    loss += opts['triplet_lambda'] * triplet_loss
 
                 # experience replay
                 if opts['replay_buffer'] > 0:
@@ -267,8 +287,9 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                             o = o.gather(1, zero_based_train_task_id.unsqueeze(-1)).squeeze(-1)
 
                             # loss evaluation on the retrieved experiences (from raw outputs)
-                            loss += opts['replay_lambda'] * \
-                                torch.nn.functional.binary_cross_entropy_with_logits(o, y_buff, reduction='mean')
+                            replay_loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y_buff, reduction='mean')
+                            loss += opts['replay_lambda'] * replay_loss
+
 
                     # possibly storing the current example(s) to the memory buffer
                     added_something = False
@@ -299,11 +320,31 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                           ", Epoch: " + str(task_epoch + 1) + "/" + str(num_task_epochs) +
                           ", Sample: " + str(n) + "/" + str(num_training_examples) + "]" +
                           " Loss: {0:.4f}, AvgLoss: {1:.4f}".format(loss.item(), avg_loss.item()))
+                    print("Class loss: {:.4f}, Concept loss {:.4f}, Concept pol: {:.4f}, Mask pol: {:.4f}, " +
+                          "Triplet loss (batch): {:.4f}, Triplet loss (buff): {:.4f}, Replay loss: {:.4f}".format(
+                              cls_loss.item(),
+                    concept_loss.item(),
+                    concept_pol_loss.item(),
+                    mask_pol_loss.item(),
+                    triplet_loss_batch.item(),
+                    triplet_loss_buffer.item(),
+                    replay_loss.item()
+                          ))
 
                 # gradient step
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+
+            # On epoch end, store the last loss values:
+            metrics_train['loss'].append(loss.item())
+            metrics_train['cls_loss'].append(cls_loss.item())
+            metrics_train['concept_loss'].append(concept_loss.item())
+            metrics_train['concept_pol_loss'].append(concept_pol_loss.item())
+            metrics_train['mask_pol_loss'].append(mask_pol_loss.item())
+            metrics_train['triplet_loss_batch'].append(triplet_loss_batch.item())
+            metrics_train['triplet_loss_buffer'].append(triplet_loss_buffer.item())
+            metrics_train['replay_loss'].append(replay_loss.item())
 
             # On epoch end, update buffer representations:
             with torch.no_grad():

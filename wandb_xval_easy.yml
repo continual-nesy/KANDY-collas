@@ -9,6 +9,8 @@ metric:
   name: avg_accuracy-val
   goal: maximize
 parameters:
+  wandb_project:
+    value: 'kandy-cem'
   data_path:
     value: './data/easy_200x20_1.0-1.0/samples/sets'
   seed:
