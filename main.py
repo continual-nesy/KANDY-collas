@@ -213,17 +213,12 @@ metrics_train, metrics_val, metrics_test, concept_names = train(net, train_set, 
 if wb is not None:
     print("Logging to W&B...")
 
-    for score_name in ['loss', 'cls_loss', 'concept_loss', 'concept_pol_loss', 'mask_pol_loss',
-                       'triplet_loss_batch', 'triplet_loss_buffer', 'replay_loss']:
-        wb.log(data={score_name + "-train": metrics_train[score_name]})
-
     for i in range(0, train_set.num_tasks):
         for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer', 'cas', 'tas']:
             wb.log(data={score_name + "-" + metrics_train['name']: metrics_train[score_name][i],
                          score_name + "-" + metrics_val['name']: metrics_val[score_name][i],
                          score_name + "-" + metrics_test['name']: metrics_test[score_name][i]},
                    step=i)
-
 
     columns = ["@"] + ["eval_" + str(i) for i in range(0, train_set.num_tasks)]
     score_name = 'acc_matrix'
@@ -240,6 +235,13 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[concept_names[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
+
+    for score_name in ['loss', 'cls_loss', 'concept_loss', 'concept_pol_loss', 'mask_pol_loss',
+                       'triplet_loss_batch', 'triplet_loss_buffer', 'replay_loss']:
+        data = [[i, x] for (i, x) in enumerate(metrics_train[score_name])]
+
+        table = wandb.Table(data=data, columns=["epoch", score_name])
+        wb.log({score_name + "-train": wandb.plot.line(table, x="epoch", y=score_name)})
 
     wb.finish()
 
