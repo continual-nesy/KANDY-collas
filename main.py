@@ -12,6 +12,9 @@ from networks import generate_net, save_net
 
 from background_knowledge import symbol_to_concepts, symbol_to_concepts2, annotate_triplet_labels
 
+from matplotlib import pyplot as plt
+import seaborn as sns
+
 # initial checks
 assert __name__ == "__main__", "Invalid usage! Run this script from command line, do not import it!"
 if len(sys.argv) == 1:
@@ -52,6 +55,9 @@ arg_parser.add_argument("--replay_lambda",
                         help="Weight of the portion of the loss that is about experience replay (only compatible with"
                              " --train continual_*; default: 0.)",
                         type=ArgNumber(float, min_val=0.), default=0.)
+arg_parser.add_argument("--cls_lambda",
+                        help="Weight of the portion of the loss that is about supervised classification (default: 1.)",
+                        type=ArgNumber(float, min_val=0.), default=1.)
 arg_parser.add_argument("--store_fuzzy", help="Store concepts in replay buffer as fuzzy tensors (default: false)",
                         type=ArgBoolean(), default=False)
 arg_parser.add_argument("--cem_emb_size",
@@ -207,7 +213,7 @@ test_set.transform = eval_transforms
 # running experiment
 start_time = time.time()
 print("Running the training procedure (" + opts['train'] + ")...")
-metrics_train, metrics_val, metrics_test, concept_names = train(net, train_set, val_set, test_set, opts)
+metrics_train, metrics_val, metrics_test, c_pred_labels, c_true_labels = train(net, train_set, val_set, test_set, opts)
 
 # logging to W&B
 if wb is not None:
@@ -227,14 +233,49 @@ if wb is not None:
         tab = wandb.Table(columns=columns, data=[["train_" + str(i)] + row for i, row in enumerate(scores)])
         wb.log({score_name + "-" + metrics['name']: tab})
 
-    columns = ["x"] + concept_names
+    fig = plt.figure(figsize=(10,10))
+
     for metrics in [metrics_train, metrics_val, metrics_test]:
-        for score_name in ['concept_correlation_pearson', 'concept_correlation_phi']:
+        columns = ["x"] + c_true_labels
+        for score_name in ['concept_correlation_pearson_pt', 'concept_correlation_phi_pt', 'counts_pt']:
             scores = metrics[score_name]
 
-            tab = wandb.Table(columns=columns, data=[[concept_names[j]] + row for j, row in enumerate(scores)])
+            tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
+            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            img = wandb.Image(hm)
+            wb.log({score_name + "-" + metrics['name'] + "-fig": img})
+            fig.clf()
+
+
+        for score_name in ['concept_correlation_pearson_tt', 'concept_correlation_phi_tt']:
+            scores = metrics[score_name]
+
+            tab = wandb.Table(columns=columns, data=[[c_true_labels[j]] + row for j, row in enumerate(scores)])
+            wb.log({score_name + "-" + metrics['name']: tab})
+
+            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_true_labels, annot=True, figure=fig)
+            img = wandb.Image(hm)
+            wb.log({score_name + "-" + metrics['name'] + "-fig": img})
+            fig.clf()
+
+        columns = ["x"] + c_pred_labels
+        for score_name in ['concept_correlation_pearson_pp', 'concept_correlation_phi_pp']:
+            scores = metrics[score_name]
+
+            tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
+            wb.log({score_name + "-" + metrics['name']: tab})
+
+            hm = sns.heatmap(scores, xticklabels=c_pred_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            img = wandb.Image(hm)
+            wb.log({score_name + "-" + metrics['name'] + "-fig": img})
+            fig.clf()
+
+        tab = wandb.Table(columns=c_true_labels, data=[metrics['counts_t']])
+        wb.log({'counts_t-' + metrics['name']: tab})
+        tab = wandb.Table(columns=c_pred_labels, data=[metrics['counts_p']])
+        wb.log({'counts_p-' + metrics['name']: tab})
 
     for score_name in ['loss', 'cls_loss', 'concept_loss', 'concept_pol_loss', 'mask_pol_loss',
                        'triplet_loss_batch', 'triplet_loss_buffer', 'replay_loss']:
@@ -242,6 +283,7 @@ if wb is not None:
 
         table = wandb.Table(data=data, columns=["epoch", score_name])
         wb.log({score_name + "-train": wandb.plot.line(table, x="epoch", y=score_name)})
+
 
     wb.finish()
 

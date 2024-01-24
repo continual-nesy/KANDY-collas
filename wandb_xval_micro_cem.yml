@@ -1,10 +1,10 @@
 program: main.py
-#method: grid
-method: random
-run_cap: 1500
+method: grid
+#method: random
+#run_cap: 1500
 # name: misc
 project: kandy-cem
-name: cem_200x26_1.0-1.0-new
+name: micro_cem_200x3_1.0-1.0
 metric:
   name: avg_accuracy-val
   goal: maximize
@@ -12,7 +12,7 @@ parameters:
   wandb_project:
     value: 'kandy-cem'
   data_path:
-    value: './data/cem_200x26_1.0-1.0/samples/sets'
+    value: './data/micro_cem_200x3_1.0-1.0/samples/sets'
   seed:
     #values: [1234, 5678, 9101]
     value: 9101
@@ -32,29 +32,29 @@ parameters:
   supervised_only:
     value: False
   task_epochs:
-    values: [1, 10]
+    values: [100]
   train:
     values: ['joint', 'independent', 'continual_task', 'continual_online']
   weight_decay:
     value: 0.0
   replay_buffer:
-    values: [50, 200]
+    values: [0, 200]
   replay_lambda:
-    values: [0., 0.1, 1.0]
+    values: [0., 1.0]
   store_fuzzy:
     values: [True, False]
   concept_lambda:
-    values: [0., 0.01, 0.1]
+    values: [0., 1.0]
   concept_polarization_lambda:
-    values: [0., 0.01, 0.1]
+    values: [0., 1.0]
   mask_polarization_lambda:
-    values: [0., 0.01, 0.1]
+    values: [0., 1.0]
   use_mask:
     values: ['no', 'crisp', 'fuzzy']
   min_pos_concepts:
     values: [0, 1, 3]
   n_concepts:
-    values: [11, 20]
+    values: [20, 30]
   balance:
     value: True
   save_net:
@@ -71,4 +71,6 @@ parameters:
   hamming_margin:
     values: [1, 2]
   triplet_lambda:
-    values: [0., 0.1, 1.0]
+    values: [0., 1.0]
+  cls_lambda:
+    values: [ 0., 1.0 ]

@@ -377,20 +377,64 @@ def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.
 def pearson_corr(c_true, c_pred, **kwargs):
     samples = np.hstack([c_true.astype(float), c_pred.astype(float)])
 
-    return np.corrcoef(samples, rowvar=False)
+    global_matrix = np.corrcoef(samples, rowvar=False)
+    tt_corr = global_matrix[:c_true.shape[1], :c_true.shape[1]]
+    pp_corr = global_matrix[c_true.shape[1]:, c_true.shape[1]:]
+    pt_corr = global_matrix[c_true.shape[1]:, :c_true.shape[1]]
+
+    t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
+    p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
+
+
+    return ({'data': tt_corr, 'x_label': t_labels, 'y_label': t_labels},
+            {'data': pp_corr, 'x_label': p_labels, 'y_label': p_labels},
+            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
 
 def matthews_corr(c_true, c_pred, **kwargs):
     c_pred = c_pred > 0.5
     samples = np.hstack([c_true, c_pred]).astype(float)
 
-    out = np.zeros((samples.shape[1], samples.shape[1]), dtype=float)
+    global_matrix = np.zeros((samples.shape[1], samples.shape[1]), dtype=float)
 
-    for i in range(out.shape[1]):
-        for j in range(out.shape[1]):
-            out[i,j] = matthews_corrcoef(samples[:,i], samples[:,j])
+    for i in range(global_matrix.shape[1]):
+        for j in range(global_matrix.shape[1]):
+            global_matrix[i,j] = matthews_corrcoef(samples[:,i], samples[:,j])
+
+    tt_corr = global_matrix[:c_true.shape[1], :c_true.shape[1]]
+    pp_corr = global_matrix[c_true.shape[1]:, c_true.shape[1]:]
+    pt_corr = global_matrix[c_true.shape[1]:, :c_true.shape[1]]
+
+    t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
+    p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
+
+    return ({'data': tt_corr, 'x_label': t_labels, 'y_label': t_labels},
+            {'data': pp_corr, 'x_label': p_labels, 'y_label': p_labels},
+            {'data': pt_corr, 'x_labepredl': p_labels, 'y_label': t_labels})
 
 
-    return out
+def raw_counts(c_true, c_pred, **kwargs):
+    c_pred = c_pred > 0.5
+
+    count_matrix = np.zeros((c_pred.shape[0], c_pred.shape[1], c_true.shape[1]), dtype=float)
+    for k in range(c_pred.shape[0]):
+        for i in range(count_matrix.shape[1]):
+            for j in range(count_matrix.shape[2]):
+                count_matrix[k, i, j] = c_pred[k, i] == 1 and c_true[k, j] == 1
+
+    pt_corr = np.zeros((c_pred.shape[1], c_true.shape[1]), dtype=float)
+    for i in range(count_matrix.shape[1]):
+        for j in range(count_matrix.shape[2]):
+            pt_corr[i, j] = np.sum(count_matrix[:, i, j])
+
+    t_corr = np.sum(c_true, axis=0)
+    p_corr = np.sum(c_pred, axis=0)
+
+    t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
+    p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
+
+    return ({'data': t_corr, 'x_label': t_labels},
+            {'data': p_corr, 'x_label': p_labels},
+            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
 
 
 # print metrics (named with string _name) computed right after having processed a given distribution (_distribution)

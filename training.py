@@ -3,7 +3,7 @@ import copy
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset import TaskOrganizedDataset
 from utils import (compute_matrices, avg_accuracy, avg_forgetting, forward_transfer, backward_transfer, print_metrics,
-                   HammingDistance, MaskedTripletMarginLoss, pearson_corr, matthews_corr)
+                   HammingDistance, MaskedTripletMarginLoss, pearson_corr, matthews_corr, raw_counts)
 
 import pytorch_metric_learning.losses, pytorch_metric_learning.miners
 from metrics import concept_alignment_score
@@ -186,7 +186,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 # loss evaluation (from raw outputs)
                 cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean') # Task loss.
-                loss = cls_loss
+                loss = opts['cls_lambda'] * cls_loss
 
                 cls_loss = cls_loss.item()
 
@@ -194,14 +194,14 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 if opts['concept_lambda'] > 0. and opts['min_pos_concepts'] > 0:
                     concept_loss = torch.mean(
-                                torch.clamp(torch.sum(c_pred[positive_samples]) - float(opts['min_pos_concepts']), 0))
+                                torch.clamp(float(opts['min_pos_concepts']) - torch.sum(c_pred[positive_samples]), 0))
                     loss += opts['concept_lambda'] * concept_loss
 
                     concept_loss = concept_loss.item()
 
 
                 if opts['concept_polarization_lambda'] > 0.:
-                    concept_pol_loss = (1. - torch.nn.functional.l1_loss(c_pred,
+                    concept_pol_loss = (1. - 2. * torch.nn.functional.l1_loss(c_pred,
                                                         zero_five[:c_pred.shape[0],:],
                                                         reduction="mean"))
                     loss += opts['concept_polarization_lambda'] * concept_pol_loss
@@ -212,7 +212,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 if opts['mask_polarization_lambda'] > 0. and opts['use_mask'] == 'fuzzy' and len(positive_samples) > 0:
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
-                    mask_pol_loss = (1. - torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
+                    mask_pol_loss = (1. - 2. * torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
                                                         reduction="mean"))
                     loss += opts['mask_polarization_lambda'] * mask_pol_loss
 
@@ -232,51 +232,75 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                         triplet_loss_batch = triplet_loss_batch.item()
 
-                    if opts['replay_buffer'] > 2:
-                        if len(train_set.buffered_indices) > 0 and \
-                            train_task_id in train_set.task2buffered_positives and \
-                            train_task_id in train_set.task2buffered_negatives and \
-                            positive_samples.shape[0] > 0 and \
-                            len(train_set.task2buffered_positives[train_task_id]) > 0 and \
-                            len(train_set.task2buffered_negatives[train_task_id]) > 0:
+                    if opts['replay_buffer'] > 2 and task_epoch > 0: # Do not compute triplet loss, unless at least one epoch has been passed.
+                        triplet_loss_buffer = 0.
+                        for triplet_task_id in range(train_task_id + 1):
+                            if len(train_set.buffered_indices) > 0 and \
+                                triplet_task_id in train_set.task2buffered_positives and \
+                                triplet_task_id in train_set.task2buffered_negatives and \
+                                positive_samples.shape[0] > 0 and \
+                                len(train_set.task2buffered_positives[triplet_task_id]) > 0 and \
+                                len(train_set.task2buffered_negatives[triplet_task_id]) > 0:
+                                if triplet_task_id == train_task_id: # If we are on the current task_id, fetch anchors from the batch...
+                                    triplet_a = c_pred[positive_samples]
+                                    triplet_p = torch.zeros(triplet_a.shape, dtype=torch.float)
+                                    triplet_n = torch.zeros(triplet_a.shape, dtype=torch.float)
+                                    for i in range(c_pred[positive_samples].shape[0]):
+                                        _, _, _, _, triplet_p[i,:], _, _, _ = train_set.get_random_buffered_sample(triplet_task_id, True)
+                                        _, _, _, _, triplet_n[i,:], _, _, _ = train_set.get_random_buffered_sample(triplet_task_id, False)
+
+                                    triplet_p = triplet_p.to(opts['device']).detach()
+                                    triplet_n = triplet_n.to(opts['device']).detach()
+                                else: # ...Otherwise, fetch anchors from replay buffer.
+                                    if opts['model'] == 'mlp':
+                                        x_buff_batch[:, :] = 0.
+                                    else:
+                                        x_buff_batch[:, :, :, :] = 0.
+
+                                    triplet_p = torch.zeros((opts['batch'], opts['n_concepts']), dtype=torch.float)
+                                    triplet_n = torch.zeros(triplet_p.shape, dtype=torch.float)
+                                    for i in range(c_pred[positive_samples].shape[0]):
+                                        x_buff_batch[i], _, _, _, _, _, _, _ = train_set.get_random_buffered_sample(
+                                            triplet_task_id, True)
+                                        _, _, _, _, triplet_p[i, :], _, _, _ = train_set.get_random_buffered_sample(
+                                            triplet_task_id, True)
+                                        _, _, _, _, triplet_n[i, :], _, _, _ = train_set.get_random_buffered_sample(
+                                            triplet_task_id, False)
+
+                                    triplet_a, _, _ = net(x_buff_batch)
 
 
-                            triplet_p = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
-                            triplet_n = torch.zeros(c_pred[positive_samples].shape, dtype=torch.float)
 
-                            for i in range(c_pred[positive_samples].shape[0]):
-                                _, _, _, _, triplet_p[i,:], _, _, _ = train_set.get_random_buffered_sample(train_task_id, True)
-                                _, _, _, _, triplet_n[i,:], _, _, _ = train_set.get_random_buffered_sample(train_task_id, False)
-
-                            triplet_p = triplet_p.to(opts['device']).detach()
-                            triplet_n = triplet_n.to(opts['device']).detach()
+                                    triplet_p = triplet_p.to(opts['device']).detach()
+                                    triplet_n = triplet_n.to(opts['device']).detach()
 
 
-                            if opts['use_mask'] == 'crisp':
-                                _, mask = distance_fn.soft_intersection(triplet_p)
-                            elif opts['use_mask'] == 'fuzzy':
-                                mask, _ = distance_fn.soft_intersection(triplet_p)
-                            else:
-                                mask = None
+                                if opts['use_mask'] == 'crisp':
+                                    _, mask = distance_fn.soft_intersection(triplet_p)
+                                elif opts['use_mask'] == 'fuzzy':
+                                    mask, _ = distance_fn.soft_intersection(triplet_p)
+                                else:
+                                    mask = None
 
-                            ap = distance_fn.hamming_distance_01_masked(c_pred[positive_samples], triplet_p, mask)
-                            an = distance_fn.hamming_distance_01_masked(c_pred[positive_samples], triplet_n, mask)
-
-
-                            current_margins = distance_fn.margin(ap, an)
-                            violation = current_margins + hamming_loss_fn.margin
+                                ap = distance_fn.hamming_distance_01_masked(triplet_a, triplet_p, mask)
+                                an = distance_fn.hamming_distance_01_masked(triplet_a, triplet_n, mask)
 
 
-                            if hamming_loss_fn.smooth_loss:
-                                loss_mat = torch.nn.functional.softplus(violation)
-                            else:
-                                loss_mat = torch.nn.functional.relu(violation)
+                                current_margins = distance_fn.margin(ap, an)
+                                violation = current_margins + hamming_loss_fn.margin
 
-                            triplet_loss_buffer = torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction.
 
-                            triplet_loss = triplet_loss_buffer + triplet_loss
+                                if hamming_loss_fn.smooth_loss:
+                                    loss_mat = torch.nn.functional.softplus(violation)
+                                else:
+                                    loss_mat = torch.nn.functional.relu(violation)
 
-                            triplet_loss_buffer = triplet_loss_buffer.item()
+                                triplet_loss_buffer = torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) + triplet_loss_buffer # AvgNonZero reduction.
+
+                            triplet_loss = triplet_loss_buffer / float(train_task_id + 1.) + triplet_loss
+
+                            if not isinstance(triplet_loss_buffer, float):
+                                triplet_loss_buffer = triplet_loss_buffer.item()
 
                     if opts['triplet_lambda'] > 0. and opts['replay_buffer'] > 2:
                         triplet_loss /= 2.
@@ -317,11 +341,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     added_something = False
 
                     for i, abs_j in enumerate(abs_idx):
-                        if opts['store_fuzzy']:
-                            added_something = train_set.buffer_sample(abs_j.item(), c_pred[i,:], opts['balance']) or added_something
-                        else:
-                            added_something = train_set.buffer_sample(abs_j.item(), torch.gt(c_pred[i, :], 0.5).to(torch.int),
-                                                                      opts['balance']) or added_something
+                        added_something = train_set.buffer_sample(abs_j.item(), torch.zeros(c_pred.shape[1], dtype=torch.float).to(opts['device']), opts['balance']) or added_something
 
                     # if the buffer changed, re-create the data sampler
                     if added_something:
@@ -450,8 +470,15 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 true_concept_len = concept_vectors[eval_task_id]['c_true'].shape[1]
                 if eval_task_id == num_tasks - 1:
-                    metrics['concept_correlation_pearson'] = pearson_corr(**concept_vectors[eval_task_id])
-                    metrics['concept_correlation_phi'] = matthews_corr(**concept_vectors[eval_task_id])
+                    (metrics['concept_correlation_pearson_tt'],
+                     metrics['concept_correlation_pearson_pp'],
+                     metrics['concept_correlation_pearson_pt']) = pearson_corr(**concept_vectors[eval_task_id])
+                    (metrics['concept_correlation_phi_tt'],
+                     metrics['concept_correlation_phi_pp'],
+                     metrics['concept_correlation_phi_pt']) = matthews_corr(**concept_vectors[eval_task_id])
+                    (metrics['counts_t'],
+                     metrics['counts_p'],
+                     metrics['counts_pt']) = raw_counts(**concept_vectors[eval_task_id])
 
             # fixing the 'joint' case (in a nutshell: repeating the same results many times to fill up the arrays)
             if opts['train'] == 'joint':
@@ -478,15 +505,37 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     metrics_val['acc_matrix'] = metrics_val['acc_matrix'].numpy().tolist()
     metrics_test['acc_matrix'] = metrics_test['acc_matrix'].numpy().tolist()
 
-    metrics_train['concept_correlation_pearson'] = metrics_train['concept_correlation_pearson'].tolist()
-    metrics_val['concept_correlation_pearson'] = metrics_val['concept_correlation_pearson'].tolist()
-    metrics_test['concept_correlation_pearson'] = metrics_test['concept_correlation_pearson'].tolist()
+    p_label = metrics_test['counts_pt']['x_label']
+    t_label = metrics_test['counts_pt']['y_label']
 
-    metrics_train['concept_correlation_phi'] = metrics_train['concept_correlation_phi'].tolist()
-    metrics_val['concept_correlation_phi'] = metrics_val['concept_correlation_phi'].tolist()
-    metrics_test['concept_correlation_phi'] = metrics_test['concept_correlation_phi'].tolist()
+    metrics_train['concept_correlation_pearson_tt'] = metrics_train['concept_correlation_pearson_tt']['data'].tolist()
+    metrics_train['concept_correlation_pearson_pp'] = metrics_train['concept_correlation_pearson_pp']['data'].tolist()
+    metrics_train['concept_correlation_pearson_pt'] = metrics_train['concept_correlation_pearson_pt']['data'].tolist()
+    metrics_val['concept_correlation_pearson_tt'] = metrics_val['concept_correlation_pearson_tt']['data'].tolist()
+    metrics_val['concept_correlation_pearson_pp'] = metrics_val['concept_correlation_pearson_pp']['data'].tolist()
+    metrics_val['concept_correlation_pearson_pt'] = metrics_val['concept_correlation_pearson_pt']['data'].tolist()
+    metrics_test['concept_correlation_pearson_tt'] = metrics_test['concept_correlation_pearson_tt']['data'].tolist()
+    metrics_test['concept_correlation_pearson_pp'] = metrics_test['concept_correlation_pearson_pp']['data'].tolist()
+    metrics_test['concept_correlation_pearson_pt'] = metrics_test['concept_correlation_pearson_pt']['data'].tolist()
 
-    concept_names = ["t_{}".format(i) for i in range(true_concept_len)]
-    concept_names.extend(["p_{}".format(i) for i in range(opts['n_concepts'])])
+    metrics_train['concept_correlation_phi_tt'] = metrics_train['concept_correlation_phi_tt']['data'].tolist()
+    metrics_train['concept_correlation_phi_pp'] = metrics_train['concept_correlation_phi_pp']['data'].tolist()
+    metrics_train['concept_correlation_phi_pt'] = metrics_train['concept_correlation_phi_pt']['data'].tolist()
+    metrics_val['concept_correlation_phi_tt'] = metrics_val['concept_correlation_phi_tt']['data'].tolist()
+    metrics_val['concept_correlation_phi_pp'] = metrics_val['concept_correlation_phi_pp']['data'].tolist()
+    metrics_val['concept_correlation_phi_pt'] = metrics_val['concept_correlation_phi_pt']['data'].tolist()
+    metrics_test['concept_correlation_phi_tt'] = metrics_test['concept_correlation_phi_tt']['data'].tolist()
+    metrics_test['concept_correlation_phi_pp'] = metrics_test['concept_correlation_phi_pp']['data'].tolist()
+    metrics_test['concept_correlation_phi_pt'] = metrics_test['concept_correlation_phi_pt']['data'].tolist()
 
-    return metrics_train, metrics_val, metrics_test, concept_names
+    metrics_train['counts_t'] = metrics_train['counts_t']['data'].tolist()
+    metrics_train['counts_p'] = metrics_train['counts_p']['data'].tolist()
+    metrics_train['counts_pt'] = metrics_train['counts_pt']['data'].tolist()
+    metrics_val['counts_t'] = metrics_val['counts_t']['data'].tolist()
+    metrics_val['counts_p'] = metrics_val['counts_p']['data'].tolist()
+    metrics_val['counts_pt'] = metrics_val['counts_pt']['data'].tolist()
+    metrics_test['counts_t'] = metrics_test['counts_t']['data'].tolist()
+    metrics_test['counts_p'] = metrics_test['counts_p']['data'].tolist()
+    metrics_test['counts_pt'] = metrics_test['counts_pt']['data'].tolist()
+
+    return metrics_train, metrics_val, metrics_test, p_label, t_label
