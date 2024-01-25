@@ -13,6 +13,8 @@ parameters:
     value: 'kandy-cem'
   data_path:
     value: './data/micro_cem_200x3_1.0-1.0/samples/sets'
+  use_global_concepts:
+    value: True
   seed:
     #values: [1234, 5678, 9101]
     value: 9101

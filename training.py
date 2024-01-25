@@ -232,7 +232,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                         triplet_loss_batch = triplet_loss_batch.item()
 
-                    if opts['replay_buffer'] > 2 and task_epoch > 0: # Do not compute triplet loss, unless at least one epoch has been passed.
+                    if opts['replay_buffer'] > 2 and task_epoch > 0: # Do not compute triplet loss, unless at least one epoch has passed.
                         triplet_loss_buffer = 0.
                         for triplet_task_id in range(train_task_id + 1):
                             if len(train_set.buffered_indices) > 0 and \

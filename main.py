@@ -88,6 +88,9 @@ arg_parser.add_argument("--min_pos_concepts",
 arg_parser.add_argument("--n_concepts",
                         help="Number of concepts in the CEM layer; (default: 20)",
                         type=ArgNumber(int, min_val=1, max_val=128), default=20)
+arg_parser.add_argument("--use_global_concepts", help="Whether to add number and alignment concepts to the concept list;" \
+                        "True: 17 ground truth concepts, False: 11 ground truth concepts (default: False).",
+                        type=ArgBoolean(), default=False)
 arg_parser.add_argument("--seed", help="Integer seed for random numbers (if < 0, it depends on time, default case)",
                         type=int, default=-1)
 arg_parser.add_argument("--output_folder", help="Output folder (default: exp)", type=str, default="exp")
@@ -165,22 +168,40 @@ set_seed(opts['seed'])
 
 # preparing data sets
 print("Preparing datasets...")
-train_set = TaskOrganizedDataset(join(data_folder, 'train'),
-                                 concept_size=opts['n_concepts'],
-                                 supervised_only=opts['supervised_only'],
-                                 max_buffer_size=opts['replay_buffer'],   # memory buffer for experience replay
-                                 concept_extractor=symbol_to_concepts2,
-                                 triplet_annotator=annotate_triplet_labels)
-val_set = TaskOrganizedDataset(join(data_folder, 'val'),
-                               concept_size=opts['n_concepts'],
-                               supervised_only=opts['supervised_only'],
-                               concept_extractor=symbol_to_concepts2,
-                               triplet_annotator=annotate_triplet_labels)
-test_set = TaskOrganizedDataset(join(data_folder, 'test'),
-                                concept_size=opts['n_concepts'],
-                                supervised_only=opts['supervised_only'],
-                                concept_extractor=symbol_to_concepts2,
-                                triplet_annotator=annotate_triplet_labels)
+if opts['use_global_concepts']:
+    train_set = TaskOrganizedDataset(join(data_folder, 'train'),
+                                     concept_size=opts['n_concepts'],
+                                     supervised_only=opts['supervised_only'],
+                                     max_buffer_size=opts['replay_buffer'],   # memory buffer for experience replay
+                                     concept_extractor=symbol_to_concepts2,
+                                     triplet_annotator=annotate_triplet_labels)
+    val_set = TaskOrganizedDataset(join(data_folder, 'val'),
+                                   concept_size=opts['n_concepts'],
+                                   supervised_only=opts['supervised_only'],
+                                   concept_extractor=symbol_to_concepts2,
+                                   triplet_annotator=annotate_triplet_labels)
+    test_set = TaskOrganizedDataset(join(data_folder, 'test'),
+                                    concept_size=opts['n_concepts'],
+                                    supervised_only=opts['supervised_only'],
+                                    concept_extractor=symbol_to_concepts2,
+                                    triplet_annotator=annotate_triplet_labels)
+else:
+    train_set = TaskOrganizedDataset(join(data_folder, 'train'),
+                                     concept_size=opts['n_concepts'],
+                                     supervised_only=opts['supervised_only'],
+                                     max_buffer_size=opts['replay_buffer'],  # memory buffer for experience replay
+                                     concept_extractor=symbol_to_concepts,
+                                     triplet_annotator=annotate_triplet_labels)
+    val_set = TaskOrganizedDataset(join(data_folder, 'val'),
+                                   concept_size=opts['n_concepts'],
+                                   supervised_only=opts['supervised_only'],
+                                   concept_extractor=symbol_to_concepts,
+                                   triplet_annotator=annotate_triplet_labels)
+    test_set = TaskOrganizedDataset(join(data_folder, 'test'),
+                                    concept_size=opts['n_concepts'],
+                                    supervised_only=opts['supervised_only'],
+                                    concept_extractor=symbol_to_concepts,
+                                    triplet_annotator=annotate_triplet_labels)
 
 # opts["n_concepts"] = len(train_set[0][3]) # Deduce concept number from the first element in the training set.
 
@@ -243,7 +264,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            hm = sns.clustermap(scores, xticklabels=c_true_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
@@ -255,7 +276,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_true_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_true_labels, annot=True, figure=fig)
+            hm = sns.clustermap(scores, xticklabels=c_true_labels, yticklabels=c_true_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
@@ -267,7 +288,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.heatmap(scores, xticklabels=c_pred_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            hm = sns.clustermap(scores, xticklabels=c_pred_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
