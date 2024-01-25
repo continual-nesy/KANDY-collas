@@ -264,7 +264,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.clustermap(scores, xticklabels=c_true_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
@@ -276,7 +276,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_true_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.clustermap(scores, xticklabels=c_true_labels, yticklabels=c_true_labels, annot=True, figure=fig)
+            hm = sns.heatmap(scores, xticklabels=c_true_labels, yticklabels=c_true_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
@@ -288,7 +288,7 @@ if wb is not None:
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
             wb.log({score_name + "-" + metrics['name']: tab})
 
-            hm = sns.clustermap(scores, xticklabels=c_pred_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
+            hm = sns.heatmap(scores, xticklabels=c_pred_labels, yticklabels=c_pred_labels, annot=True, figure=fig)
             img = wandb.Image(hm)
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
