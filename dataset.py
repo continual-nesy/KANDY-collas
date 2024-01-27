@@ -295,6 +295,17 @@ class TaskOrganizedDataset(Dataset):
 
         return self.__getitem__(self.buffered_indices[idx])
 
+    def get_random_buffered_triple(self, current_task_id):
+        task_idx = random.randint(0, current_task_id)
+        p_idxs = random.sample(self.task2buffered_positives[task_idx], k=2)
+        n_idx = random.choice(self.task2buffered_negatives[task_idx])
+
+        x_a, _, _, _, _, _, _, _ = self[p_idxs[0]]
+        _, _, _, _, c_p, _, _, _ = self[p_idxs[1]]
+        _, _, _, _, c_n, _, _, _ = self[n_idx]
+
+        return x_a, c_p, c_n
+
     def update_representation(self, idx, c_pred):
         assert c_pred.shape == self.buffered_concepts[self.buffered_indices.index(idx)].shape
 

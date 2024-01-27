@@ -12,8 +12,12 @@ parameters:
   wandb_project:
     value: 'kandy-cem'
   data_path:
-    value: './data/easy_200x20_1.0-1.0/samples/sets'
+    value: './data/easy_100x20_1.0-1.0/samples/sets'
   use_global_concepts:
+    value: False
+  compute_training_metrics:
+    value: False
+  correlate_each_task:
     value: False
   seed:
     values: [1234, 5678, 9101]

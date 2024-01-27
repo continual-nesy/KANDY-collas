@@ -18,6 +18,10 @@ from pytorch_lightning import seed_everything
 
 from sklearn.metrics import matthews_corrcoef
 
+from matplotlib import pyplot as plt
+import seaborn as sns
+import PIL
+
 class ArgNumber:
     """Implement the notion of 'number' when passed as input argument to the program, deeply checking it.
     It also checks if the number falls in a given range."""
@@ -409,7 +413,7 @@ def matthews_corr(c_true, c_pred, **kwargs):
 
     return ({'data': tt_corr, 'x_label': t_labels, 'y_label': t_labels},
             {'data': pp_corr, 'x_label': p_labels, 'y_label': p_labels},
-            {'data': pt_corr, 'x_labepredl': p_labels, 'y_label': t_labels})
+            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
 
 
 def raw_counts(c_true, c_pred, **kwargs):
@@ -476,7 +480,22 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     print(s)
 
 
+def assemble_video(data): # Very slow...
+    fig = plt.figure(figsize=(10, 10))
+    w, h = fig.canvas.get_width_height()
+    imgs = np.zeros((len(data), 3, w, h), dtype=np.uint8)
+    fnt = PIL.ImageFont.truetype("Pillow/Tests/fonts/FreeMono.ttf", 40)
+    for i, x in enumerate(data):
+        sns.heatmap(x['data'], annot=True, xticklabels=x['y_label'], yticklabels=x['x_label'], figure=fig)
+        fig.draw(fig.canvas.renderer)
+        img = PIL.Image.frombytes('RGB', (w, h),
+                                 np.asarray(fig.canvas.buffer_rgba()).take([0, 1, 2], axis=2).tobytes())
+        draw = PIL.ImageDraw.Draw(img)
+        draw.text((10, 10), "Task id = {}".format(i), font=fnt, fill=(0, 0, 0, 255))
+        imgs[i,:,:,:] = np.moveaxis(np.array(img), 2, 0)
+        fig.clf()
 
+    return imgs
 
 
 class HammingDistance(pytorch_metric_learning.distances.BaseDistance):

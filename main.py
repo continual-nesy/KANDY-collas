@@ -7,13 +7,14 @@ import wandb
 from os.path import join
 from training import train
 from dataset import check_data_folder, TaskOrganizedDataset
-from utils import ArgNumber, ArgBoolean, save_dict, generate_experiment_name, set_seed, elapsed_time
+from utils import ArgNumber, ArgBoolean, save_dict, generate_experiment_name, set_seed, elapsed_time, assemble_video
 from networks import generate_net, save_net
 
 from background_knowledge import symbol_to_concepts, symbol_to_concepts2, annotate_triplet_labels
 
 from matplotlib import pyplot as plt
 import seaborn as sns
+import tempfile
 
 # initial checks
 assert __name__ == "__main__", "Invalid usage! Run this script from command line, do not import it!"
@@ -102,6 +103,10 @@ arg_parser.add_argument("--save_results", help="Save results at the end of exper
                         type=ArgBoolean(), default=True)
 arg_parser.add_argument("--save_options", help="Save options at the beginning of experiment.",
                         type=ArgBoolean(), default=True)
+arg_parser.add_argument("--compute_training_metrics", help="Whether to compute metrics on the training set as well (slow); (default: False).",
+                        type=ArgBoolean(), default=False)
+arg_parser.add_argument("--correlate_each_task", help="Whether to compute correlation matrices for each task (slow), or only at the end; (default: False).",
+                        type=ArgBoolean(), default=False)
 arg_parser.add_argument("--print_every", help="Number of gradient steps before consecutive prints to screen "
                                               "(default: 10)", type=int, default=10)
 arg_parser.add_argument("--wandb_project", help="Use W&B, this is the project name (default: None)",
@@ -304,6 +309,20 @@ if wb is not None:
 
         table = wandb.Table(data=data, columns=["epoch", score_name])
         wb.log({score_name + "-train": wandb.plot.line(table, x="epoch", y=score_name)})
+
+    if opts['correlate_each_task']:
+        for metrics in [metrics_train, metrics_val, metrics_test]:
+            for score_name in ['concept_correlation_pearson_pt_continual', 'concept_correlation_phi_pt_continual', 'counts_pt_continual']:
+                vid = assemble_video(metrics[score_name])
+                vid = wandb.Video(vid, fps=1)
+                wb.log({score_name + '-' + metrics['name']: vid})
+
+            for score_name in ['concept_correlation_pearson_pp_continual', 'concept_correlation_phi_pp_continual']:
+                vid = assemble_video(metrics[score_name])
+                vid = wandb.Video(vid, fps=1)
+                wb.log({score_name + '-' + metrics['name']: vid})
+
+
 
 
     wb.finish()
