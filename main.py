@@ -89,11 +89,18 @@ arg_parser.add_argument("--min_pos_concepts",
 arg_parser.add_argument("--n_concepts",
                         help="Number of concepts in the CEM layer; (default: 20)",
                         type=ArgNumber(int, min_val=1, max_val=128), default=20)
+arg_parser.add_argument("--share_embeddings", help="Whether weights for the c_emb linear layer should be shared for each concept (default: True).",
+                        type=ArgBoolean(), default=True)
+arg_parser.add_argument("--decorrelate_concepts", help="Whether to add a Decorrelated Batch Normalization before c_pred sigmoid (default: False).",
+                        type=ArgBoolean(), default=False)
 arg_parser.add_argument("--use_global_concepts", help="Whether to add number and alignment concepts to the concept list;" \
                         "True: 17 ground truth concepts, False: 11 ground truth concepts (default: False).",
                         type=ArgBoolean(), default=False)
 arg_parser.add_argument("--seed", help="Integer seed for random numbers (if < 0, it depends on time, default case)",
                         type=int, default=-1)
+arg_parser.add_argument("--decorrelation_groups", help="Number of groups for decorrelation batch normalization, " \
+                        "if 1 corresponds to traditional batch norm; (default: 0)",
+                        type=ArgNumber(int, min_val=0), default=0)
 arg_parser.add_argument("--output_folder", help="Output folder (default: exp)", type=str, default="exp")
 arg_parser.add_argument("--device", help="Device to use (default: cpu, or the value of environment variable DEVICE, "
                                          "if available - set with 'export DEVICE=cuda:0', for example)",
@@ -168,6 +175,11 @@ assert opts['concept_lambda'] == 0. or opts['min_pos_concepts'] > 0, \
 assert opts['mask_polarization_lambda'] == 0. or opts['use_mask'] == 'fuzzy', \
     "Mask polarization can be used only if the mask is differentiable (i.e. fuzzy intersection)."
 
+assert not opts['decorrelate_concepts'] or opts['decorrelation_groups'] > 0 and opts['decorrelation_groups'], \
+    "The number of groups for Decorrelation Batch Normalization must be > 1 if decorrelate_concepts=True"
+assert opts['decorrelation_groups'] < opts['n_concepts'], \
+    "The number of groups for Decorrelation Batch Normalization must be < number of concepts."
+
 # setting up seeds for random number generators
 set_seed(opts['seed'])
 
@@ -218,7 +230,10 @@ if opts['train'] != 'independent':
                                                           num_outputs=train_set.num_tasks,
                                                           input_shape=train_set.input_shape,
                                                           n_concepts=opts["n_concepts"],
-                                                          cem_emb_size=opts["cem_emb_size"])
+                                                          cem_emb_size=opts["cem_emb_size"],
+                                                          share_embeddings=opts["share_embeddings"],
+                                                          decorrelate_probs=opts["decorrelate_concepts"],
+                                                          num_groups=opts["decorrelation_groups"])
 else:
     net = []
     train_transforms = None
@@ -228,7 +243,10 @@ else:
                                                                num_outputs=1,  # assuming binary tasks
                                                                input_shape=train_set.input_shape,
                                                                n_concepts=opts["n_concepts"],
-                                                               cem_emb_size=opts["cem_emb_size"])
+                                                               cem_emb_size=opts["cem_emb_size"],
+                                                               share_embeddings=opts["share_embeddings"],
+                                                               decorrelate_probs=opts["decorrelate_concepts"],
+                                                               num_groups=opts["decorrelation_groups"])
         net.append(_net)
 
 # setting up transformations for data augmentation

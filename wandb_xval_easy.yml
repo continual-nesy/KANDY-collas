@@ -18,7 +18,11 @@ parameters:
   compute_training_metrics:
     value: False
   correlate_each_task:
-    value: False
+    value: True
+  share_embeddings:
+    values: [ True, False ]
+  decorrelate_concepts:
+    values: [ True, False ]
   seed:
     values: [1234, 5678, 9101]
   augment:
