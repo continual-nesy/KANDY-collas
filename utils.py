@@ -378,6 +378,12 @@ def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.
                 net.cpu()
         return accuracies_per_task, concept_vectors
 
+def swap_corr_rows(mat):
+    idx = np.arange(mat.shape[0])
+    for i in range(min(mat.shape)):
+        idx[i] = np.argmax(mat[:,i])
+    return idx
+
 def pearson_corr(c_true, c_pred, **kwargs):
     samples = np.hstack([c_true.astype(float), c_pred.astype(float)])
 
@@ -386,13 +392,15 @@ def pearson_corr(c_true, c_pred, **kwargs):
     pp_corr = global_matrix[c_true.shape[1]:, c_true.shape[1]:]
     pt_corr = global_matrix[c_true.shape[1]:, :c_true.shape[1]]
 
+    idx = swap_corr_rows(pt_corr)
+
     t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
     p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
 
 
     return ({'data': tt_corr, 'x_label': t_labels, 'y_label': t_labels},
             {'data': pp_corr, 'x_label': p_labels, 'y_label': p_labels},
-            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
+            {'data': pt_corr[idx,:], 'x_label': [p_labels[i] for i in idx], 'y_label': t_labels})
 
 def matthews_corr(c_true, c_pred, **kwargs):
     c_pred = c_pred > 0.5
@@ -408,12 +416,14 @@ def matthews_corr(c_true, c_pred, **kwargs):
     pp_corr = global_matrix[c_true.shape[1]:, c_true.shape[1]:]
     pt_corr = global_matrix[c_true.shape[1]:, :c_true.shape[1]]
 
+    idx = swap_corr_rows(pt_corr)
+
     t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
     p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
 
     return ({'data': tt_corr, 'x_label': t_labels, 'y_label': t_labels},
             {'data': pp_corr, 'x_label': p_labels, 'y_label': p_labels},
-            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
+            {'data': pt_corr[idx,:], 'x_label': [p_labels[i] for i in idx], 'y_label': t_labels})
 
 
 def raw_counts(c_true, c_pred, **kwargs):
@@ -433,12 +443,14 @@ def raw_counts(c_true, c_pred, **kwargs):
     t_corr = np.sum(c_true, axis=0)
     p_corr = np.sum(c_pred, axis=0)
 
+    idx = swap_corr_rows(pt_corr)
+
     t_labels = ["t_{}".format(i) for i in range(c_true.shape[1])]
     p_labels = ["p_{}".format(i) for i in range(c_pred.shape[1])]
 
     return ({'data': t_corr, 'x_label': t_labels},
             {'data': p_corr, 'x_label': p_labels},
-            {'data': pt_corr, 'x_label': p_labels, 'y_label': t_labels})
+            {'data': pt_corr[idx,:], 'x_label': [p_labels[i] for i in idx], 'y_label': t_labels})
 
 
 # print metrics (named with string _name) computed right after having processed a given distribution (_distribution)
