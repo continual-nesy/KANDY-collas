@@ -476,7 +476,9 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     s += "backward_transfer: {:.2f}".format(metrics['backward_transfer'][tasks_seen_so_far - 1]) + ", "
     s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1]) + ", "
     s += "cas: {:.2f}".format(metrics['cas'][tasks_seen_so_far - 1]) + ", "
-    s += "tas: {:.2f}".format(metrics['tas'][tasks_seen_so_far - 1])
+    s += "tas: {:.2f}".format(metrics['tas'][tasks_seen_so_far - 1]) + ", "
+    s += "extended_cas: {:.2f}".format(metrics['extended_cas'][tasks_seen_so_far - 1]) + ", "
+    s += "extended_tas: {:.2f}".format(metrics['extended_tas'][tasks_seen_so_far - 1])
     print(s)
 
 

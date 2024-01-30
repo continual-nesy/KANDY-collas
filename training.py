@@ -8,6 +8,8 @@ from utils import (compute_matrices, avg_accuracy, avg_forgetting, forward_trans
 import pytorch_metric_learning.losses, pytorch_metric_learning.miners
 from metrics import concept_alignment_score
 
+import numpy as np
+
 def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
           train_set: TaskOrganizedDataset,
           val_set: TaskOrganizedDataset,
@@ -78,6 +80,9 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'forward_transfer': [-1.] * num_tasks,
         'cas': [-1.] * num_tasks,
         'tas': [-1.] * num_tasks,
+        'extended_cas': [-1.] * num_tasks,
+        'extended_tas': [-1.] * num_tasks,
+
     }
 
     if opts['correlate_each_task']:
@@ -86,6 +91,11 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         metrics_train['concept_correlation_phi_pp_continual'] = []
         metrics_train['concept_correlation_phi_pt_continual'] = []
         metrics_train['counts_pt_continual'] = []
+        metrics_train['concept_correlation_pearson_pp_continual_extended'] = []
+        metrics_train['concept_correlation_pearson_pt_continual_extended'] = []
+        metrics_train['concept_correlation_phi_pp_continual_extended'] = []
+        metrics_train['concept_correlation_phi_pt_continual_extended'] = []
+        metrics_train['counts_pt_continual_extended'] = []
 
     metrics_val = copy.deepcopy(metrics_train)
     metrics_val['name'] = 'val'
@@ -101,6 +111,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     metrics_train['triplet_loss_batch'] = []
     metrics_train['triplet_loss_buffer'] = []
     metrics_train['replay_loss'] = []
+
+    extended_concept_vectors = {}
 
     optimizer = None
     replay_set_data_loader = None
@@ -441,6 +453,14 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                                   tune_last_task_only=False)
                 # tune_decision_thresholds=(eval_set == val_set) and opts['train'] != 'continual_online',
                 # tune_last_task_only=opts['train'] != 'joint')
+
+                for k in concept_vectors[eval_task_id].keys():
+                    if k not in extended_concept_vectors:
+                        extended_concept_vectors[k] = concept_vectors[eval_task_id][k]
+                    else:
+                        extended_concept_vectors[k] = np.concatenate([extended_concept_vectors[k], concept_vectors[eval_task_id][k]], axis=0)
+
+
             else:
                 acc_per_task = [-1.] * len(acc_per_task)  # acc_per_task was populated during the val-set evaluation
 
@@ -463,13 +483,18 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             if concept_vectors is None:
                 metrics['cas'][eval_task_id] = 0
                 metrics['tas'][eval_task_id] = 0
+                metrics['extended_cas'][eval_task_id] = 0
+                metrics['extended_tas'][eval_task_id] = 0
             else:
-
-
                 metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(c_vec=concept_vectors[eval_task_id]['c_embs'],
                                                                        c_test=concept_vectors[eval_task_id]['c_true'],
                                                                        y_test=concept_vectors[eval_task_id]['pseudo_y'],
                                                                        step=5)
+                metrics['extended_cas'][eval_task_id], metrics['extended_tas'][eval_task_id] = concept_alignment_score(
+                    c_vec=extended_concept_vectors['c_embs'],
+                    c_test=extended_concept_vectors['c_true'],
+                    y_test=extended_concept_vectors['pseudo_y'],
+                    step=5)
 
                 true_concept_len = concept_vectors[eval_task_id]['c_true'].shape[1]
                 if opts['correlate_each_task']:
@@ -491,16 +516,34 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     pt['data'] = pt['data'].tolist()
                     metrics['counts_pt_continual'].append(pt)
 
+                    _, pp, pt = pearson_corr(**extended_concept_vectors)
+                    pp['data'] = pp['data'].tolist()
+                    pt['data'] = pt['data'].tolist()
+
+                    metrics['concept_correlation_pearson_pp_continual_extended'].append(pp)
+                    metrics['concept_correlation_pearson_pt_continual_extended'].append(pt)
+
+                    _, pp, pt = matthews_corr(**extended_concept_vectors)
+                    pp['data'] = pp['data'].tolist()
+                    pt['data'] = pt['data'].tolist()
+
+                    metrics['concept_correlation_phi_pp_continual_extended'].append(pp)
+                    metrics['concept_correlation_phi_pt_continual_extended'].append(pt)
+
+                    _, _, pt = raw_counts(**extended_concept_vectors)
+                    pt['data'] = pt['data'].tolist()
+                    metrics['counts_pt_continual_extended'].append(pt)
+
                 if eval_task_id == num_tasks - 1:
                     (metrics['concept_correlation_pearson_tt'],
                      metrics['concept_correlation_pearson_pp'],
-                     metrics['concept_correlation_pearson_pt']) = pearson_corr(**concept_vectors[eval_task_id])
+                     metrics['concept_correlation_pearson_pt']) = pearson_corr(**extended_concept_vectors)
                     (metrics['concept_correlation_phi_tt'],
                      metrics['concept_correlation_phi_pp'],
-                     metrics['concept_correlation_phi_pt']) = matthews_corr(**concept_vectors[eval_task_id])
+                     metrics['concept_correlation_phi_pt']) = matthews_corr(**extended_concept_vectors)
                     (metrics['counts_t'],
                      metrics['counts_p'],
-                     metrics['counts_pt']) = raw_counts(**concept_vectors[eval_task_id])
+                     metrics['counts_pt']) = raw_counts(**extended_concept_vectors)
 
             # fixing the 'joint' case (in a nutshell: repeating the same results many times to fill up the arrays)
             if opts['train'] == 'joint':
@@ -510,6 +553,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 metrics['forward_transfer'][0:-1] = [metrics['forward_transfer'][-1]] * (num_tasks - 1)
                 metrics['cas'][0:-1] = [metrics['cas'][-1]] * (num_tasks - 1)
                 metrics['tas'][0:-1] = [metrics['tas'][-1]] * (num_tasks - 1)
+                metrics['extended_cas'][0:-1] = [metrics['extended_cas'][-1]] * (num_tasks - 1)
+                metrics['extended_tas'][0:-1] = [metrics['extended_tas'][-1]] * (num_tasks - 1)
 
             # printing
             print_metrics(metrics, train_task_id + 1)
