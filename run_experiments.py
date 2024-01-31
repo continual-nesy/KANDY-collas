@@ -61,7 +61,7 @@ commands = []
 # Joint:
 for m in models:
     for d in datasets:
-        cmd = "python main.py " + const_str + " --train continual_task"
+        cmd = "python main.py " + const_str + " --train continual_task "
         var_params = ["--{} {}".format(k, v) for k, v in m.items()]
         var_params += ["--{} {}".format(k, v) for k, v in d.items()]
 
@@ -74,7 +74,7 @@ for m in models:
         for t in triplet_params:
             for r in replay_params:
                 for d2 in decorrelation_params:
-                    cmd = "python main.py " + const_str + " --train continual_task"
+                    cmd = "python main.py " + const_str + " --train continual_task "
                     var_params = ["--{} {}".format(k, v) for k, v in m.items()]
                     var_params += ["--{} {}".format(k, v) for k, v in d.items()]
                     var_params += ["--{} {}".format(k, v) for k, v in t.items()]
