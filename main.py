@@ -265,7 +265,7 @@ if wb is not None:
 
     for i in range(0, train_set.num_tasks):
         for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer',
-                           'cas', 'tas', 'extended_cas', 'extended_tas']:
+                           'cas', 'tas', 'cas_extended', 'tas_extended']:
             wb.log(data={score_name + "-" + metrics_train['name']: metrics_train[score_name][i],
                          score_name + "-" + metrics_val['name']: metrics_val[score_name][i],
                          score_name + "-" + metrics_test['name']: metrics_test[score_name][i]},
@@ -282,7 +282,7 @@ if wb is not None:
 
     for metrics in [metrics_train, metrics_val, metrics_test]:
         columns = ["x"] + c_true_labels
-        for score_name in ['concept_correlation_pearson_pt', 'concept_correlation_phi_pt', 'counts_pt']:
+        for score_name in ['concept_correlation_phi_pt']: #['concept_correlation_pearson_pt', 'concept_correlation_phi_pt', 'counts_pt']:
             scores = metrics[score_name]
 
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
@@ -294,7 +294,7 @@ if wb is not None:
             fig.clf()
 
 
-        for score_name in ['concept_correlation_pearson_tt', 'concept_correlation_phi_tt']:
+        for score_name in ['concept_correlation_phi_tt']: #['concept_correlation_pearson_tt', 'concept_correlation_phi_tt']:
             scores = metrics[score_name]
 
             tab = wandb.Table(columns=columns, data=[[c_true_labels[j]] + row for j, row in enumerate(scores)])
@@ -306,7 +306,7 @@ if wb is not None:
             fig.clf()
 
         columns = ["x"] + c_pred_labels
-        for score_name in ['concept_correlation_pearson_pp', 'concept_correlation_phi_pp']:
+        for score_name in ['concept_correlation_phi_pp']: #['concept_correlation_pearson_pp', 'concept_correlation_phi_pp']:
             scores = metrics[score_name]
 
             tab = wandb.Table(columns=columns, data=[[c_pred_labels[j]] + row for j, row in enumerate(scores)])
@@ -331,15 +331,17 @@ if wb is not None:
 
     if opts['correlate_each_task']:
         for metrics in [metrics_train, metrics_val, metrics_test]:
-            for score_name in ['concept_correlation_pearson_pt_continual', 'concept_correlation_phi_pt_continual',
-                               'counts_pt_continual', 'concept_correlation_pearson_pt_continual_extended',
-                               'concept_correlation_phi_pt_continual_extended', 'counts_pt_continual_extended']:
+            for score_name in ['concept_correlation_phi_pt_continual', 'concept_correlation_phi_pt_continual_extended']:
+                            # ['concept_correlation_pearson_pt_continual', 'concept_correlation_phi_pt_continual',
+                               #'counts_pt_continual', 'concept_correlation_pearson_pt_continual_extended',
+                               #'concept_correlation_phi_pt_continual_extended', 'counts_pt_continual_extended']:
                 vid = assemble_video(metrics[score_name])
                 vid = wandb.Video(vid, fps=1)
                 wb.log({score_name + '-' + metrics['name']: vid, score_name + '-tab-' + metrics['name']: metrics[score_name]})
 
-            for score_name in ['concept_correlation_pearson_pp_continual', 'concept_correlation_phi_pp_continual',
-                               'concept_correlation_pearson_pp_continual_extended', 'concept_correlation_phi_pp_continual_extended']:
+            for score_name in ['concept_correlation_phi_pp_continual', 'concept_correlation_phi_pp_continual_extended']:
+                #['concept_correlation_pearson_pp_continual', 'concept_correlation_phi_pp_continual',
+                              # 'concept_correlation_pearson_pp_continual_extended', 'concept_correlation_phi_pp_continual_extended']:
                 vid = assemble_video(metrics[score_name])
                 vid = wandb.Video(vid, fps=1)
                 wb.log({score_name + '-' + metrics['name']: vid, score_name + '-tab-' + metrics['name']: metrics[score_name]})

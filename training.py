@@ -80,22 +80,22 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'forward_transfer': [-1.] * num_tasks,
         'cas': [-1.] * num_tasks,
         'tas': [-1.] * num_tasks,
-        'extended_cas': [-1.] * num_tasks,
-        'extended_tas': [-1.] * num_tasks,
+        'cas_extended': [-1.] * num_tasks,
+        'tas_extended': [-1.] * num_tasks,
 
     }
 
     if opts['correlate_each_task']:
-        metrics_train['concept_correlation_pearson_pp_continual'] = []
-        metrics_train['concept_correlation_pearson_pt_continual'] = []
+        #metrics_train['concept_correlation_pearson_pp_continual'] = []
+        #metrics_train['concept_correlation_pearson_pt_continual'] = []
         metrics_train['concept_correlation_phi_pp_continual'] = []
         metrics_train['concept_correlation_phi_pt_continual'] = []
-        metrics_train['counts_pt_continual'] = []
-        metrics_train['concept_correlation_pearson_pp_continual_extended'] = []
-        metrics_train['concept_correlation_pearson_pt_continual_extended'] = []
+        #metrics_train['counts_pt_continual'] = []
+        #metrics_train['concept_correlation_pearson_pp_continual_extended'] = []
+        #metrics_train['concept_correlation_pearson_pt_continual_extended'] = []
         metrics_train['concept_correlation_phi_pp_continual_extended'] = []
         metrics_train['concept_correlation_phi_pt_continual_extended'] = []
-        metrics_train['counts_pt_continual_extended'] = []
+        #metrics_train['counts_pt_continual_extended'] = []
 
     metrics_val = copy.deepcopy(metrics_train)
     metrics_val['name'] = 'val'
@@ -483,8 +483,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             if concept_vectors is None:
                 metrics['cas'][eval_task_id] = 0
                 metrics['tas'][eval_task_id] = 0
-                metrics['extended_cas'][eval_task_id] = 0
-                metrics['extended_tas'][eval_task_id] = 0
+                metrics['cas_extended'][eval_task_id] = 0
+                metrics['tas_extended'][eval_task_id] = 0
             else:
                 c_pred_for_cas = concept_vectors[eval_task_id]['c_embs']
                 c_test_for_cas = concept_vectors[eval_task_id]['c_true']
@@ -505,7 +505,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                                                   c_pred_for_cas.shape[1]))  # N x A x C
                 #c_pred_for_cas = c_pred_for_cas.reshape((c_pred_for_cas.shape[0], -1))  # N x AC
 
-                metrics['extended_cas'][eval_task_id], metrics['extended_tas'][eval_task_id] = concept_alignment_score(
+                metrics['cas_extended'][eval_task_id], metrics['tas_extended'][eval_task_id] = concept_alignment_score(
                     c_vec=c_pred_for_cas,
                     c_test=c_test_for_cas,
                     y_test=extended_concept_vectors['pseudo_y'],
@@ -525,12 +525,12 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 true_concept_len = concept_vectors[eval_task_id]['c_true'].shape[1]
                 if opts['correlate_each_task']:
-                    _, pp, pt = pearson_corr(**concept_vectors[eval_task_id])
-                    pp['data'] = pp['data'].tolist()
-                    pt['data'] = pt['data'].tolist()
+                    #_, pp, pt = pearson_corr(**concept_vectors[eval_task_id])
+                    #pp['data'] = pp['data'].tolist()
+                    #pt['data'] = pt['data'].tolist()
 
-                    metrics['concept_correlation_pearson_pp_continual'].append(pp)
-                    metrics['concept_correlation_pearson_pt_continual'].append(pt)
+                    #metrics['concept_correlation_pearson_pp_continual'].append(pp)
+                    #metrics['concept_correlation_pearson_pt_continual'].append(pt)
 
                     _, pp, pt = matthews_corr(**concept_vectors[eval_task_id])
                     pp['data'] = pp['data'].tolist()
@@ -539,16 +539,16 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     metrics['concept_correlation_phi_pp_continual'].append(pp)
                     metrics['concept_correlation_phi_pt_continual'].append(pt)
 
-                    _, _, pt = raw_counts(**concept_vectors[eval_task_id])
-                    pt['data'] = pt['data'].tolist()
-                    metrics['counts_pt_continual'].append(pt)
+                    #_, _, pt = raw_counts(**concept_vectors[eval_task_id])
+                    #pt['data'] = pt['data'].tolist()
+                    #metrics['counts_pt_continual'].append(pt)
 
-                    _, pp, pt = pearson_corr(**extended_concept_vectors)
-                    pp['data'] = pp['data'].tolist()
-                    pt['data'] = pt['data'].tolist()
+                    #_, pp, pt = pearson_corr(**extended_concept_vectors)
+                    #pp['data'] = pp['data'].tolist()
+                    #pt['data'] = pt['data'].tolist()
 
-                    metrics['concept_correlation_pearson_pp_continual_extended'].append(pp)
-                    metrics['concept_correlation_pearson_pt_continual_extended'].append(pt)
+                    #metrics['concept_correlation_pearson_pp_continual_extended'].append(pp)
+                    #metrics['concept_correlation_pearson_pt_continual_extended'].append(pt)
 
                     _, pp, pt = matthews_corr(**extended_concept_vectors)
                     pp['data'] = pp['data'].tolist()
@@ -557,20 +557,20 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     metrics['concept_correlation_phi_pp_continual_extended'].append(pp)
                     metrics['concept_correlation_phi_pt_continual_extended'].append(pt)
 
-                    _, _, pt = raw_counts(**extended_concept_vectors)
-                    pt['data'] = pt['data'].tolist()
-                    metrics['counts_pt_continual_extended'].append(pt)
+                    #_, _, pt = raw_counts(**extended_concept_vectors)
+                    #pt['data'] = pt['data'].tolist()
+                    #metrics['counts_pt_continual_extended'].append(pt)
 
                 if eval_task_id == num_tasks - 1:
-                    (metrics['concept_correlation_pearson_tt'],
-                     metrics['concept_correlation_pearson_pp'],
-                     metrics['concept_correlation_pearson_pt']) = pearson_corr(**extended_concept_vectors)
+                    #(metrics['concept_correlation_pearson_tt'],
+                    # metrics['concept_correlation_pearson_pp'],
+                    # metrics['concept_correlation_pearson_pt']) = pearson_corr(**extended_concept_vectors)
                     (metrics['concept_correlation_phi_tt'],
                      metrics['concept_correlation_phi_pp'],
                      metrics['concept_correlation_phi_pt']) = matthews_corr(**extended_concept_vectors)
-                    (metrics['counts_t'],
-                     metrics['counts_p'],
-                     metrics['counts_pt']) = raw_counts(**extended_concept_vectors)
+                    #(metrics['counts_t'],
+                    # metrics['counts_p'],
+                    # metrics['counts_pt']) = raw_counts(**extended_concept_vectors)
 
             # fixing the 'joint' case (in a nutshell: repeating the same results many times to fill up the arrays)
             if opts['train'] == 'joint':
@@ -580,8 +580,8 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 metrics['forward_transfer'][0:-1] = [metrics['forward_transfer'][-1]] * (num_tasks - 1)
                 metrics['cas'][0:-1] = [metrics['cas'][-1]] * (num_tasks - 1)
                 metrics['tas'][0:-1] = [metrics['tas'][-1]] * (num_tasks - 1)
-                metrics['extended_cas'][0:-1] = [metrics['extended_cas'][-1]] * (num_tasks - 1)
-                metrics['extended_tas'][0:-1] = [metrics['extended_tas'][-1]] * (num_tasks - 1)
+                metrics['cas_extended'][0:-1] = [metrics['cas_extended'][-1]] * (num_tasks - 1)
+                metrics['tas_extended'][0:-1] = [metrics['tas_extended'][-1]] * (num_tasks - 1)
 
             # printing
             print_metrics(metrics, train_task_id + 1)
@@ -600,21 +600,21 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     metrics_test['acc_matrix'] = metrics_test['acc_matrix'].numpy().tolist()
 
     if opts['correlate_each_task']:
-        p_label = metrics_test['counts_pt_continual'][0]['x_label']
-        t_label = metrics_test['counts_pt_continual'][0]['y_label']
+        p_label = metrics_test['concept_correlation_phi_pt_continual'][0]['x_label']
+        t_label = metrics_test['concept_correlation_phi_pt_continual'][0]['y_label']
     else:
-        p_label = metrics_test['counts_pt']['x_label']
-        t_label = metrics_test['counts_pt']['y_label']
+        p_label = metrics_test['concept_correlation_phi_pt']['x_label']
+        t_label = metrics_test['concept_correlation_phi_pt']['y_label']
 
-    metrics_train['concept_correlation_pearson_tt'] = metrics_train['concept_correlation_pearson_tt']['data'].tolist()
-    metrics_train['concept_correlation_pearson_pp'] = metrics_train['concept_correlation_pearson_pp']['data'].tolist()
-    metrics_train['concept_correlation_pearson_pt'] = metrics_train['concept_correlation_pearson_pt']['data'].tolist()
-    metrics_val['concept_correlation_pearson_tt'] = metrics_val['concept_correlation_pearson_tt']['data'].tolist()
-    metrics_val['concept_correlation_pearson_pp'] = metrics_val['concept_correlation_pearson_pp']['data'].tolist()
-    metrics_val['concept_correlation_pearson_pt'] = metrics_val['concept_correlation_pearson_pt']['data'].tolist()
-    metrics_test['concept_correlation_pearson_tt'] = metrics_test['concept_correlation_pearson_tt']['data'].tolist()
-    metrics_test['concept_correlation_pearson_pp'] = metrics_test['concept_correlation_pearson_pp']['data'].tolist()
-    metrics_test['concept_correlation_pearson_pt'] = metrics_test['concept_correlation_pearson_pt']['data'].tolist()
+    #metrics_train['concept_correlation_pearson_tt'] = metrics_train['concept_correlation_pearson_tt']['data'].tolist()
+    #metrics_train['concept_correlation_pearson_pp'] = metrics_train['concept_correlation_pearson_pp']['data'].tolist()
+    #metrics_train['concept_correlation_pearson_pt'] = metrics_train['concept_correlation_pearson_pt']['data'].tolist()
+    #metrics_val['concept_correlation_pearson_tt'] = metrics_val['concept_correlation_pearson_tt']['data'].tolist()
+    #metrics_val['concept_correlation_pearson_pp'] = metrics_val['concept_correlation_pearson_pp']['data'].tolist()
+    #metrics_val['concept_correlation_pearson_pt'] = metrics_val['concept_correlation_pearson_pt']['data'].tolist()
+    #metrics_test['concept_correlation_pearson_tt'] = metrics_test['concept_correlation_pearson_tt']['data'].tolist()
+    #metrics_test['concept_correlation_pearson_pp'] = metrics_test['concept_correlation_pearson_pp']['data'].tolist()
+    #metrics_test['concept_correlation_pearson_pt'] = metrics_test['concept_correlation_pearson_pt']['data'].tolist()
 
     metrics_train['concept_correlation_phi_tt'] = metrics_train['concept_correlation_phi_tt']['data'].tolist()
     metrics_train['concept_correlation_phi_pp'] = metrics_train['concept_correlation_phi_pp']['data'].tolist()
@@ -626,15 +626,15 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
     metrics_test['concept_correlation_phi_pp'] = metrics_test['concept_correlation_phi_pp']['data'].tolist()
     metrics_test['concept_correlation_phi_pt'] = metrics_test['concept_correlation_phi_pt']['data'].tolist()
 
-    metrics_train['counts_t'] = metrics_train['counts_t']['data'].tolist()
-    metrics_train['counts_p'] = metrics_train['counts_p']['data'].tolist()
-    metrics_train['counts_pt'] = metrics_train['counts_pt']['data'].tolist()
-    metrics_val['counts_t'] = metrics_val['counts_t']['data'].tolist()
-    metrics_val['counts_p'] = metrics_val['counts_p']['data'].tolist()
-    metrics_val['counts_pt'] = metrics_val['counts_pt']['data'].tolist()
-    metrics_test['counts_t'] = metrics_test['counts_t']['data'].tolist()
-    metrics_test['counts_p'] = metrics_test['counts_p']['data'].tolist()
-    metrics_test['counts_pt'] = metrics_test['counts_pt']['data'].tolist()
+    #metrics_train['counts_t'] = metrics_train['counts_t']['data'].tolist()
+    #metrics_train['counts_p'] = metrics_train['counts_p']['data'].tolist()
+    #metrics_train['counts_pt'] = metrics_train['counts_pt']['data'].tolist()
+    #metrics_val['counts_t'] = metrics_val['counts_t']['data'].tolist()
+    #metrics_val['counts_p'] = metrics_val['counts_p']['data'].tolist()
+    #metrics_val['counts_pt'] = metrics_val['counts_pt']['data'].tolist()
+    #metrics_test['counts_t'] = metrics_test['counts_t']['data'].tolist()
+    #metrics_test['counts_p'] = metrics_test['counts_p']['data'].tolist()
+    #metrics_test['counts_pt'] = metrics_test['counts_pt']['data'].tolist()
 
 
 
