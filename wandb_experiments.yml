@@ -1,0 +1,11 @@
+program: run_experiments.py
+method: grid
+# name: misc
+project: kandy-cem2
+name: cem_200x26_1.0-1.0
+metric:
+  name: avg_accuracy-val
+  goal: maximize
+parameters:
+  experiment_id:
+    values: [0, 1, 2]
