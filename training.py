@@ -206,7 +206,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                 # loss evaluation (from raw outputs)
                 cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y, reduction='mean') # Task loss.
-                loss = opts['cls_lambda'] * cls_loss
+                loss = opts['cls_lambda'] * torch.nan_to_num(cls_loss)
 
                 cls_loss = cls_loss.item()
 
@@ -215,7 +215,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 if opts['concept_lambda'] > 0. and opts['min_pos_concepts'] > 0:
                     concept_loss = torch.mean(
                                 torch.clamp(float(opts['min_pos_concepts']) - torch.sum(c_pred[positive_samples]), 0))
-                    loss += opts['concept_lambda'] * concept_loss
+                    loss += opts['concept_lambda'] * torch.nan_to_num(concept_loss)
 
                     concept_loss = concept_loss.item()
 
@@ -224,7 +224,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     concept_pol_loss = (1. - 2. * torch.nn.functional.l1_loss(c_pred,
                                                         zero_five[:c_pred.shape[0],:],
                                                         reduction="mean"))
-                    loss += opts['concept_polarization_lambda'] * concept_pol_loss
+                    loss += opts['concept_polarization_lambda'] * torch.nan_to_num(concept_pol_loss)
 
                     concept_pol_loss = concept_pol_loss.item()
 
@@ -234,7 +234,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                     mask, _ = distance_fn.soft_intersection(c_pred[positive_samples])
                     mask_pol_loss = (1. - 2. * torch.nn.functional.l1_loss(mask, zero_five[:mask.shape[0],:],
                                                         reduction="mean"))
-                    loss += opts['mask_polarization_lambda'] * mask_pol_loss
+                    loss += opts['mask_polarization_lambda'] * torch.nan_to_num(mask_pol_loss)
 
                     mask_pol_loss = mask_pol_loss.item()
 
@@ -249,7 +249,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                         triplet_loss_batch = hamming_loss_fn(c_pred, eq_classes, indices_tuple=indices_tuple,
                                                         positives=c_pred[positive_samples])
 
-                        triplet_loss = triplet_loss_batch
+                        triplet_loss = torch.nan_to_num(triplet_loss_batch)
 
                         triplet_loss_batch = triplet_loss_batch.item()
 
@@ -312,7 +312,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                             triplet_loss_buffer = torch.mean(loss_mat[torch.gt(loss_mat, 0.)]) # AvgNonZero reduction.
 
-                            triplet_loss = triplet_loss_buffer + triplet_loss
+                            triplet_loss = torch.nan_to_num(triplet_loss_buffer) + triplet_loss
 
                             if not isinstance(triplet_loss_buffer, float):
                                 triplet_loss_buffer = triplet_loss_buffer.item()
@@ -347,7 +347,7 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
 
                             # loss evaluation on the retrieved experiences (from raw outputs)
                             replay_loss = torch.nn.functional.binary_cross_entropy_with_logits(o, y_buff, reduction='mean')
-                            loss += opts['replay_lambda'] * replay_loss
+                            loss += opts['replay_lambda'] * torch.nan_to_num(replay_loss)
 
                             replay_loss = replay_loss.item()
 
@@ -486,15 +486,42 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 metrics['extended_cas'][eval_task_id] = 0
                 metrics['extended_tas'][eval_task_id] = 0
             else:
-                metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(c_vec=concept_vectors[eval_task_id]['c_embs'],
-                                                                       c_test=concept_vectors[eval_task_id]['c_true'],
-                                                                       y_test=concept_vectors[eval_task_id]['pseudo_y'],
-                                                                       step=5)
+                c_pred_for_cas = concept_vectors[eval_task_id]['c_embs']
+                c_test_for_cas = concept_vectors[eval_task_id]['c_true']
+                c_pred_for_cas = np.broadcast_to(np.expand_dims(c_pred_for_cas,axis=1),
+                                                 (c_pred_for_cas.shape[0], c_test_for_cas.shape[1],c_pred_for_cas.shape[1])) # N x A x C
+                #c_pred_for_cas = c_pred_for_cas.reshape((c_pred_for_cas.shape[0], -1)) # N x AC
+
+                metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(
+                    c_vec=c_pred_for_cas,
+                    c_test=c_test_for_cas,
+                    y_test=concept_vectors[eval_task_id]['pseudo_y'],
+                    step=5)
+
+                c_pred_for_cas = extended_concept_vectors['c_embs']
+                c_test_for_cas = extended_concept_vectors['c_true']
+                c_pred_for_cas = np.broadcast_to(np.expand_dims(c_pred_for_cas, axis=1),
+                                                 (c_pred_for_cas.shape[0], c_test_for_cas.shape[1],
+                                                  c_pred_for_cas.shape[1]))  # N x A x C
+                #c_pred_for_cas = c_pred_for_cas.reshape((c_pred_for_cas.shape[0], -1))  # N x AC
+
                 metrics['extended_cas'][eval_task_id], metrics['extended_tas'][eval_task_id] = concept_alignment_score(
-                    c_vec=extended_concept_vectors['c_embs'],
-                    c_test=extended_concept_vectors['c_true'],
+                    c_vec=c_pred_for_cas,
+                    c_test=c_test_for_cas,
                     y_test=extended_concept_vectors['pseudo_y'],
                     step=5)
+
+                # OLD
+                #metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(c_vec=concept_vectors[eval_task_id]['c_embs'],
+                #                                                       c_test=concept_vectors[eval_task_id]['c_true'],
+                #                                                       y_test=concept_vectors[eval_task_id]['pseudo_y'],
+                #                                                       step=5)
+                #metrics['extended_cas'][eval_task_id], metrics['extended_tas'][eval_task_id] = concept_alignment_score(
+                #    c_vec=extended_concept_vectors['c_embs'],
+                #    c_test=extended_concept_vectors['c_true'],
+                #    y_test=extended_concept_vectors['pseudo_y'],
+                #    step=5)
+                # END OLD
 
                 true_concept_len = concept_vectors[eval_task_id]['c_true'].shape[1]
                 if opts['correlate_each_task']:

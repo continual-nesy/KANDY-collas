@@ -952,30 +952,36 @@ def concept_alignment_score(
         bar = tqdm(range(c_test.shape[1]))
     else:
         bar = range(c_test.shape[1])
+    c_cluster_labels = {}
     for concept_id in bar:
         concept_homogeneity, task_homogeneity = [], []
         for nc in n_clusters:
-            kmedoids = KMedoids(n_clusters=nc, random_state=0)
-            if c_vec.shape[1] != c_test.shape[1]:
-                c_cluster_labels = kmedoids.fit_predict(
-                    np.hstack([
-                        c_vec[:, concept_id][:, np.newaxis],
-                        c_vec[:, c_test.shape[1]:]
-                    ])
-                )
-            elif c_vec.shape[1] == c_test.shape[1] and len(c_vec.shape) == 2:
-                c_cluster_labels = kmedoids.fit_predict(
-                    c_vec[:, concept_id].reshape(-1, 1)
-                )
-            else:
-                c_cluster_labels = kmedoids.fit_predict(c_vec[:, concept_id, :])
+            #kmedoids = KMedoids(n_clusters=nc, random_state=0)
+            #if c_vec.shape[1] != c_test.shape[1]:
+            #    c_cluster_labels = kmedoids.fit_predict(
+            #        np.hstack([
+            #            c_vec[:, concept_id][:, np.newaxis],
+            #            c_vec[:, c_test.shape[1]:]
+            #        ])
+            #    )
+            #elif c_vec.shape[1] == c_test.shape[1] and len(c_vec.shape) == 2:
+            #    c_cluster_labels = kmedoids.fit_predict(
+            #        c_vec[:, concept_id].reshape(-1, 1)
+            #    )
+            #else:
+            #    c_cluster_labels = kmedoids.fit_predict(c_vec[:, concept_id, :])
+            if concept_id not in c_cluster_labels:
+                c_cluster_labels[concept_id] = {}
+            if nc not in c_cluster_labels[concept_id]:
+                kmedoids = KMedoids(n_clusters=nc, random_state=0)
+                c_cluster_labels[concept_id][nc] = kmedoids.fit_predict(c_vec[:, concept_id, :])
 
             # compute alignment with ground truth labels
             concept_homogeneity.append(
-                homogeneity_score(c_test[:, concept_id], c_cluster_labels)
+                homogeneity_score(c_test[:, concept_id], c_cluster_labels[concept_id][nc])
             )
             task_homogeneity.append(
-                homogeneity_score(y_test, c_cluster_labels)
+                homogeneity_score(y_test, c_cluster_labels[concept_id][nc])
             )
 
         # compute the area under the curve
