@@ -46,7 +46,7 @@ models = [{"model": "cnn"}, {"model": "resnet50_head_only"}, {"model": "vit_head
 datasets = [{"data_path": "./data/cem_200x26_1.0-1.0/samples/sets", "use_global_concepts": "true"},
             {"data_path": "./data/easy_100x20_1.0-1.0/samples/sets", "use_global_concepts": "false"}]
 
-triplet_params = [{"triplet_lambda": 0., "hamming_margin": 0}, {"triplet_lambda": 1., "hamming_margin": 1},
+triplet_params = [{"triplet_lambda": 0., "hamming_margin": 1}, {"triplet_lambda": 1., "hamming_margin": 1},
                   {"triplet_lambda": 1., "hamming_margin": 4}, {"triplet_lambda": 10., "hamming_margin": 1}]
 
 replay_params = [{"replay_lambda": 1., "replay_buffer": 200},
@@ -96,6 +96,7 @@ for m in models:
 if len(sys.argv) == 1:
     print("Not enough arguments were provided.\nRun with -h to get the list of supported arguments.")
     print(list(range(len(commands)))) # For convenience, output the list of allowed values for experiment_id.
+
     sys.exit(0)
 
 
