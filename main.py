@@ -317,10 +317,10 @@ if wb is not None:
             wb.log({score_name + "-" + metrics['name'] + "-fig": img})
             fig.clf()
 
-        tab = wandb.Table(columns=c_true_labels, data=[metrics['counts_t']])
-        wb.log({'counts_t-' + metrics['name']: tab})
-        tab = wandb.Table(columns=c_pred_labels, data=[metrics['counts_p']])
-        wb.log({'counts_p-' + metrics['name']: tab})
+        #tab = wandb.Table(columns=c_true_labels, data=[metrics['counts_t']])
+        #wb.log({'counts_t-' + metrics['name']: tab})
+        #tab = wandb.Table(columns=c_pred_labels, data=[metrics['counts_p']])
+        #wb.log({'counts_p-' + metrics['name']: tab})
 
     for score_name in ['loss', 'cls_loss', 'concept_loss', 'concept_pol_loss', 'mask_pol_loss',
                        'triplet_loss_batch', 'triplet_loss_buffer', 'replay_loss']:
