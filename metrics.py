@@ -2,17 +2,14 @@
 import warnings
 
 from sklearn_extra.cluster import KMedoids
-from sklearn.metrics import homogeneity_score
+from sklearn.metrics import homogeneity_completeness_v_measure
 import scipy
 import sklearn
 import torch
 import numpy as np
 
 from scipy.special import softmax
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.neural_network import MLPClassifier
 from tqdm import tqdm
 
 # Pytorch reimplementation of CEM metrics from: https://github.com/mateoespinosa/cem
@@ -900,38 +897,17 @@ def concept_alignment_score(
     c_vec,
     c_test,
     y_test,
-    step,
-    force_alignment=False,
-    alignment=None,
-    progress_bar=True,
+    step
 ):
     """
-    Computes the concept alignment score between learnt concepts and labels.
+    Computes the concept alignment scores between learnt concepts and labels.
 
     :param c_vec: predicted concept representations (can be concept embeddings)
     :param c_test: concept ground truth labels
     :param y_test: task ground truth labels
     :param step: number of integration steps
-    :return: concept alignment AUC, task alignment AUC
+    :return: concept alignment AUC, task alignment AUC, concept completeness AUC, task completeness AUC, concept v-measure AUC, task v-measure AUC
     """
-
-    # First lets compute an alignment between concept
-    # scores and ground truth concepts
-    if force_alignment:
-        if alignment is None:
-            purity_mat = concept_purity_matrix(
-                c_soft=c_vec,
-                c_true=c_test,
-            )
-            alignment = find_max_alignment(purity_mat)
-        # And use the new vector with its corresponding alignment
-        if c_vec.shape[-1] < c_test.shape[-1]:
-            # Then the alignment will need to be done backwards as
-            # we will have to get rid of the dimensions in c_test
-            # which have no aligment at all
-            c_test = c_test[:, list(filter(lambda x: x is not None, alignment))]
-        else:
-            c_vec = c_vec[:, alignment]
 
     # compute the maximum value for the AUC
     n_clusters = np.linspace(
@@ -947,34 +923,46 @@ def concept_alignment_score(
     # for each concept:
     #   1. find clusters
     #   2. compare cluster assignments with ground truth concept/task labels
-    concept_auc, task_auc = [], []
-    if progress_bar:
-        bar = tqdm(range(c_test.shape[1]))
-    else:
-        bar = range(c_test.shape[1])
+    concept_h_auc, task_h_auc = [], []
+    concept_c_auc, task_c_auc = [], []
+    concept_v_auc, task_v_auc = [], []
+
     kmedoids = {}
-    for concept_id in bar:
+    c_cluster_labels = {}
+    for concept_id in range(c_test.shape[1]):
         concept_homogeneity, task_homogeneity = [], []
+        concept_completeness, task_completeness = [], []
+        concept_v_measure, task_v_measure = [], []
         for nc in n_clusters:
             if nc not in kmedoids:
                 kmedoids[nc] = KMedoids(n_clusters=nc, random_state=0)
-            c_cluster_labels = kmedoids[nc].fit_predict(c_vec[:, concept_id, :])
+                c_cluster_labels[nc] = kmedoids[nc].fit_predict(c_vec[:, concept_id, :])
 
             # compute alignment with ground truth labels
-            concept_homogeneity.append(
-                homogeneity_score(c_test[:, concept_id], c_cluster_labels)
-            )
-            task_homogeneity.append(
-                homogeneity_score(y_test, c_cluster_labels)
-            )
+            h_c, c_c, v_c = homogeneity_completeness_v_measure(c_test[:, concept_id], c_cluster_labels[nc])
+            h_t, c_t, v_t = homogeneity_completeness_v_measure(y_test, c_cluster_labels[nc])
+
+            concept_homogeneity.append(h_c)
+            task_homogeneity.append(h_t)
+            concept_completeness.append(c_c)
+            task_completeness.append(c_t)
+            concept_v_measure.append(v_c)
+            task_v_measure.append(v_t)
 
         # compute the area under the curve
-        concept_auc.append(np.trapz(np.array(concept_homogeneity)) / max_auc)
-        task_auc.append(np.trapz(np.array(task_homogeneity)) / max_auc)
+        concept_h_auc.append(np.trapz(np.array(concept_homogeneity)) / max_auc)
+        task_h_auc.append(np.trapz(np.array(task_homogeneity)) / max_auc)
+        concept_c_auc.append(np.trapz(np.array(concept_completeness)) / max_auc)
+        task_c_auc.append(np.trapz(np.array(task_completeness)) / max_auc)
+        concept_v_auc.append(np.trapz(np.array(concept_v_measure)) / max_auc)
+        task_v_auc.append(np.trapz(np.array(task_v_measure)) / max_auc)
 
     # return the average alignment across all concepts
-    concept_auc = np.mean(concept_auc)
-    task_auc = np.mean(task_auc)
-    if force_alignment:
-        return concept_auc, task_auc, alignment
-    return concept_auc, task_auc
+    concept_h_auc = np.mean(concept_h_auc)
+    task_h_auc = np.mean(task_h_auc)
+    concept_c_auc = np.mean(concept_c_auc)
+    task_c_auc = np.mean(task_c_auc)
+    concept_v_auc = np.mean(concept_v_auc)
+    task_v_auc = np.mean(task_v_auc)
+
+    return concept_h_auc, task_h_auc, concept_c_auc, task_c_auc, concept_v_auc, task_v_auc

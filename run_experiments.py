@@ -16,7 +16,7 @@ constant_params = {
     "seed": 9101,
     "cem_emb_size": 12,
     "concept_lambda": 0.,
-    "use_mask": "no",
+    #"use_mask": "no",
     "concept_polarization_lambda": 0.,
     "mask_polarization_lambda": 0.,
     "min_pos_concepts": 0,
@@ -49,26 +49,31 @@ datasets = [{"data_path": "./data/cem_200x26_1.0-1.0/samples/sets", "use_global_
 triplet_params = [{"triplet_lambda": 0., "hamming_margin": 0}, {"triplet_lambda": 1., "hamming_margin": 1},
                   {"triplet_lambda": 1., "hamming_margin": 4}, {"triplet_lambda": 10., "hamming_margin": 1}]
 
-replay_params = [{"replay_lambda": 0., "replay_buffer": 0}, {"replay_lambda": 1., "replay_buffer": 200},
+replay_params = [{"replay_lambda": 1., "replay_buffer": 200},
                  {"replay_lambda": 10., "replay_buffer": 200}]
 
 decorrelation_params = [{"decorrelate_concepts": False, "decorrelation_groups": 1},
                         {"decorrelate_concepts": True, "decorrelation_groups": 1},
-                        {"decorrelate_concepts": True, "decorrelation_groups": 2},
-                        {"decorrelate_concepts": True, "decorrelation_groups": 6}]
+                        {"decorrelate_concepts": True, "decorrelation_groups": 3}]
+
+mask_params = [{"use_mask": "no"}, {"use_mask": "crisp"}]
 
 commands = []
 # Joint:
 for m in models:
     for d in datasets:
-        for d2 in decorrelation_params:
-            cmd = "python main.py " + const_str + " --train joint "
-            var_params = ["--{} {}".format(k, v) for k, v in m.items()]
-            var_params += ["--{} {}".format(k, v) for k, v in d.items()]
-            var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
+        for t in triplet_params:
+            for d2 in decorrelation_params:
+                for m2 in mask_params:
+                    cmd = "python main.py " + const_str + " --train joint "
+                    var_params = ["--{} {}".format(k, v) for k, v in m.items()]
+                    var_params += ["--{} {}".format(k, v) for k, v in d.items()]
+                    var_params += ["--{} {}".format(k, v) for k, v in t.items()]
+                    var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
+                    var_params += ["--{} {}".format(k, v) for k, v in m2.items()]
 
-            cmd += " ".join(var_params)
-            commands.append(cmd)
+                    cmd += " ".join(var_params)
+                    commands.append(cmd)
 
 # Continual task-incremental:
 for m in models:
@@ -76,15 +81,17 @@ for m in models:
         for t in triplet_params:
             for r in replay_params:
                 for d2 in decorrelation_params:
-                    cmd = "python main.py " + const_str + " --train continual_task "
-                    var_params = ["--{} {}".format(k, v) for k, v in m.items()]
-                    var_params += ["--{} {}".format(k, v) for k, v in d.items()]
-                    var_params += ["--{} {}".format(k, v) for k, v in t.items()]
-                    var_params += ["--{} {}".format(k, v) for k, v in r.items()]
-                    var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
+                    for m2 in mask_params:
+                        cmd = "python main.py " + const_str + " --train continual_task "
+                        var_params = ["--{} {}".format(k, v) for k, v in m.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in d.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in t.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in r.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
 
-                    cmd += " ".join(var_params)
-                    commands.append(cmd)
+                        cmd += " ".join(var_params)
+                        commands.append(cmd)
 
 if len(sys.argv) == 1:
     print("Not enough arguments were provided.\nRun with -h to get the list of supported arguments.")

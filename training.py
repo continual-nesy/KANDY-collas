@@ -80,8 +80,16 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
         'forward_transfer': [-1.] * num_tasks,
         'cas': [-1.] * num_tasks,
         'tas': [-1.] * num_tasks,
+        'ccs': [-1.] * num_tasks,
+        'tcs': [-1.] * num_tasks,
+        'cvs': [-1.] * num_tasks,
+        'tvs': [-1.] * num_tasks,
         'cas_extended': [-1.] * num_tasks,
         'tas_extended': [-1.] * num_tasks,
+        'ccs_extended': [-1.] * num_tasks,
+        'tcs_extended': [-1.] * num_tasks,
+        'cvs_extended': [-1.] * num_tasks,
+        'tvs_extended': [-1.] * num_tasks,
 
     }
 
@@ -483,16 +491,26 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
             if concept_vectors is None:
                 metrics['cas'][eval_task_id] = 0
                 metrics['tas'][eval_task_id] = 0
+                metrics['ccs'][eval_task_id] = 0
+                metrics['tcs'][eval_task_id] = 0
+                metrics['cvs'][eval_task_id] = 0
+                metrics['tvs'][eval_task_id] = 0
                 metrics['cas_extended'][eval_task_id] = 0
                 metrics['tas_extended'][eval_task_id] = 0
+                metrics['ccs_extended'][eval_task_id] = 0
+                metrics['tcs_extended'][eval_task_id] = 0
+                metrics['cvs_extended'][eval_task_id] = 0
+                metrics['tvs_extended'][eval_task_id] = 0
             else:
                 c_pred_for_cas = concept_vectors[eval_task_id]['c_embs']
                 c_test_for_cas = concept_vectors[eval_task_id]['c_true']
                 c_pred_for_cas = np.broadcast_to(np.expand_dims(c_pred_for_cas,axis=1),
                                                  (c_pred_for_cas.shape[0], c_test_for_cas.shape[1],c_pred_for_cas.shape[1])) # N x A x C
-                #c_pred_for_cas = c_pred_for_cas.reshape((c_pred_for_cas.shape[0], -1)) # N x AC
 
-                metrics['cas'][eval_task_id], metrics['tas'][eval_task_id] = concept_alignment_score(
+                (metrics['cas'][eval_task_id], metrics['tas'][eval_task_id],
+                 metrics['ccs'][eval_task_id], metrics['tcs'][eval_task_id],
+                 metrics['cvs'][eval_task_id], metrics['tvs'][eval_task_id]
+                 ) = concept_alignment_score(
                     c_vec=c_pred_for_cas,
                     c_test=c_test_for_cas,
                     y_test=concept_vectors[eval_task_id]['pseudo_y'],
@@ -503,9 +521,11 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 c_pred_for_cas = np.broadcast_to(np.expand_dims(c_pred_for_cas, axis=1),
                                                  (c_pred_for_cas.shape[0], c_test_for_cas.shape[1],
                                                   c_pred_for_cas.shape[1]))  # N x A x C
-                #c_pred_for_cas = c_pred_for_cas.reshape((c_pred_for_cas.shape[0], -1))  # N x AC
 
-                metrics['cas_extended'][eval_task_id], metrics['tas_extended'][eval_task_id] = concept_alignment_score(
+                (metrics['cas_extended'][eval_task_id], metrics['tas_extended'][eval_task_id],
+                 metrics['ccs_extended'][eval_task_id], metrics['tcs_extended'][eval_task_id],
+                 metrics['cvs_extended'][eval_task_id], metrics['tvs_extended'][eval_task_id]
+                 ) = concept_alignment_score(
                     c_vec=c_pred_for_cas,
                     c_test=c_test_for_cas,
                     y_test=extended_concept_vectors['pseudo_y'],
@@ -580,8 +600,16 @@ def train(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
                 metrics['forward_transfer'][0:-1] = [metrics['forward_transfer'][-1]] * (num_tasks - 1)
                 metrics['cas'][0:-1] = [metrics['cas'][-1]] * (num_tasks - 1)
                 metrics['tas'][0:-1] = [metrics['tas'][-1]] * (num_tasks - 1)
+                metrics['ccs'][0:-1] = [metrics['ccs'][-1]] * (num_tasks - 1)
+                metrics['tcs'][0:-1] = [metrics['tcs'][-1]] * (num_tasks - 1)
+                metrics['cvs'][0:-1] = [metrics['cvs'][-1]] * (num_tasks - 1)
+                metrics['tvs'][0:-1] = [metrics['tvs'][-1]] * (num_tasks - 1)
                 metrics['cas_extended'][0:-1] = [metrics['cas_extended'][-1]] * (num_tasks - 1)
                 metrics['tas_extended'][0:-1] = [metrics['tas_extended'][-1]] * (num_tasks - 1)
+                metrics['ccs_extended'][0:-1] = [metrics['ccs_extended'][-1]] * (num_tasks - 1)
+                metrics['tcs_extended'][0:-1] = [metrics['tcs_extended'][-1]] * (num_tasks - 1)
+                metrics['cvs_extended'][0:-1] = [metrics['cvs_extended'][-1]] * (num_tasks - 1)
+                metrics['tvs_extended'][0:-1] = [metrics['tvs_extended'][-1]] * (num_tasks - 1)
 
             # printing
             print_metrics(metrics, train_task_id + 1)

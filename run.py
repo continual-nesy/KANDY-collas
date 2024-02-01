@@ -7,7 +7,7 @@ commands = [
     "--cem_emb_size 12 --hamming_margin 1 --triplet_lambda 1.0 --concept_lambda 0.0 --use_mask no "
     "--concept_polarization_lambda 0.0 --mask_polarization_lambda 0.0 --min_pos_concepts 0 --n_concepts 30 "
     "--model cnn --output_folder exp --balance true --replay_buffer 200 --replay_lambda 1.0 --lr -0.001 "
-    "--store_fuzzy no --cls_lambda 1.0 --use_global_concepts True --device cuda:0 "#--wandb_project kandy-cem "
+    "--store_fuzzy no --cls_lambda 1.0 --use_global_concepts True --device cuda:0 --wandb_project kandy-cem "
     "--compute_training_metrics False --correlate_each_task False --share_embeddings True --decorrelate_concepts True "
     "--decorrelation_groups 6"
 ]

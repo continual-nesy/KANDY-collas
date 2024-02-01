@@ -265,7 +265,9 @@ if wb is not None:
 
     for i in range(0, train_set.num_tasks):
         for score_name in ['avg_accuracy', 'avg_forgetting', 'backward_transfer', 'forward_transfer',
-                           'cas', 'tas', 'cas_extended', 'tas_extended']:
+                           'cas', 'tas', 'cas_extended', 'tas_extended',
+                           'ccs', 'tcs', 'ccs_extended', 'tcs_extended',
+                           'cvs', 'tvs', 'cvs_extended', 'tvs_extended']:
             wb.log(data={score_name + "-" + metrics_train['name']: metrics_train[score_name][i],
                          score_name + "-" + metrics_val['name']: metrics_val[score_name][i],
                          score_name + "-" + metrics_test['name']: metrics_test[score_name][i]},

@@ -158,6 +158,7 @@ def set_seed(seed: int):
         :param seed: An integer seed (if -1, then the current time is used).
     """
 
+
     seed = int(time.time()) if seed < 0 else int(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -238,7 +239,7 @@ def backward_transfer(acc_matrix: torch.Tensor) -> float:
 
         :param acc_matrix: The num_task-by-num_task matrix, where the (i,j)-th entry is the accuracy of the model
             trained up task i, evaluated on data from task j.
-        :returns: The positive backward transfer score.
+        :returns: The positive backward transfer score, shifted by -0.5 (the baseline score for binary tasks).
     """
 
     if acc_matrix.shape[0] == 1:
@@ -247,7 +248,7 @@ def backward_transfer(acc_matrix: torch.Tensor) -> float:
         _CCM_diff = acc_matrix - torch.diag(acc_matrix)
         _bwt = (2. * torch.sum(torch.tril(_CCM_diff, diagonal=-1))) / float(acc_matrix.shape[0] *
                                                                             (acc_matrix.shape[0] - 1))
-        return max(_bwt.item(), 0.)
+        return max(_bwt.item() - 0.5, 0.)
 
 
 def forward_transfer(acc_matrix: torch.Tensor) -> float:
@@ -255,7 +256,7 @@ def forward_transfer(acc_matrix: torch.Tensor) -> float:
 
         :param acc_matrix: The num_task-by-num_task matrix, where the (i,j)-th entry is the accuracy of the model
             trained up task i, evaluated on data from task j.
-        :returns: The forward transfer score.
+        :returns: The forward transfer score, shifted by -0.5 (the baseline score for binary tasks).
     """
 
     if acc_matrix.shape[0] == 1:
@@ -263,7 +264,7 @@ def forward_transfer(acc_matrix: torch.Tensor) -> float:
     else:
         _fwd = (2. * torch.sum(torch.triu(acc_matrix, diagonal=1))) / float(acc_matrix.shape[0] *
                                                                             (acc_matrix.shape[0] - 1))
-        return _fwd.item()
+        return _fwd.item() - 0.5
 
 
 def compute_matrices(net: torch.nn.Module | list[torch.nn.Module] | tuple[torch.nn.Module],
@@ -487,10 +488,18 @@ def print_metrics(metrics: dict, tasks_seen_so_far: int) -> None:
     s += "avg_forgetting: {:.2f}".format(metrics['avg_forgetting'][tasks_seen_so_far - 1]) + ", "
     s += "backward_transfer: {:.2f}".format(metrics['backward_transfer'][tasks_seen_so_far - 1]) + ", "
     s += "forward_transfer: {:.2f}".format(metrics['forward_transfer'][tasks_seen_so_far - 1]) + ", "
-    s += "cas: {:.2f}".format(metrics['cas'][tasks_seen_so_far - 1]) + ", "
-    s += "tas: {:.2f}".format(metrics['tas'][tasks_seen_so_far - 1]) + ", "
+    #s += "cas: {:.2f}".format(metrics['cas'][tasks_seen_so_far - 1]) + ", "
+    #s += "tas: {:.2f}".format(metrics['tas'][tasks_seen_so_far - 1]) + ", "
+    #s += "ccs: {:.2f}".format(metrics['ccs'][tasks_seen_so_far - 1]) + ", "
+    #s += "tcs: {:.2f}".format(metrics['tcs'][tasks_seen_so_far - 1]) + ", "
+    #s += "cvs: {:.2f}".format(metrics['cvs'][tasks_seen_so_far - 1]) + ", "
+    #s += "tvs: {:.2f}".format(metrics['tvs'][tasks_seen_so_far - 1]) + ", "
     s += "cas_extended: {:.2f}".format(metrics['cas_extended'][tasks_seen_so_far - 1]) + ", "
-    s += "tas_extended: {:.2f}".format(metrics['tas_extended'][tasks_seen_so_far - 1])
+    s += "tas_extended: {:.2f}".format(metrics['tas_extended'][tasks_seen_so_far - 1]) + ", "
+    s += "ccs_extended: {:.2f}".format(metrics['ccs_extended'][tasks_seen_so_far - 1]) + ", "
+    s += "tcs_extended: {:.2f}".format(metrics['tcs_extended'][tasks_seen_so_far - 1]) + ", "
+    s += "cvs_extended: {:.2f}".format(metrics['cvs_extended'][tasks_seen_so_far - 1]) + ", "
+    s += "tvs_extended: {:.2f}".format(metrics['tvs_extended'][tasks_seen_so_far - 1])
     print(s)
 
 
