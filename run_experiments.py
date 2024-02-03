@@ -56,7 +56,7 @@ decorrelation_params = [{"decorrelate_concepts": False, "decorrelation_groups": 
                         {"decorrelate_concepts": True, "decorrelation_groups": 1},
                         {"decorrelate_concepts": True, "decorrelation_groups": 3}]
 
-mask_params = [{"use_mask": "no"}, {"use_mask": "crisp"}]
+mask_params = [{"use_mask": "fuzzy"}]
 
 commands = []
 # Joint:
@@ -70,10 +70,12 @@ for m in models:
                     var_params += ["--{} {}".format(k, v) for k, v in d.items()]
                     var_params += ["--{} {}".format(k, v) for k, v in t.items()]
                     var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
-                    var_params += ["--{} {}".format(k, v) for k, v in m2.items()]
+                    var_params += ["--{} {}".format(k, v) for k, v in m2.items()] # A questo punto fare fuzzy anche joint?
 
                     cmd += " ".join(var_params)
                     commands.append(cmd)
+
+mask_params = [{"use_mask": "no"}, {"use_mask": "crisp"}]
 
 # Continual task-incremental:
 for m in models:
@@ -88,7 +90,7 @@ for m in models:
                         var_params += ["--{} {}".format(k, v) for k, v in t.items()]
                         var_params += ["--{} {}".format(k, v) for k, v in r.items()]
                         var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
-                        var_params += ["--{} {}".format(k, v) for k, v in d2.items()]
+                        var_params += ["--{} {}".format(k, v) for k, v in m2.items()]
 
                         cmd += " ".join(var_params)
                         commands.append(cmd)

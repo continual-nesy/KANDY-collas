@@ -1,10 +1,10 @@
 program: main.py
-#method: grid
-method: random
-run_cap: 500
+method: grid
+#method: random
+#run_cap: 500
 # name: misc
 project: kandy-cem
-name: cem_200x26_1.0-1.0-largereplay
+name: cem_200x26_1.0-1.0-decorrelate
 metric:
   name: avg_accuracy-val
   goal: maximize
@@ -39,11 +39,14 @@ parameters:
   supervised_only:
     value: False
   share_embeddings:
-    values: [True, False]
+    value: False
   decorrelate_concepts:
-    values: [True, False]
+    value: True
+  decorrelation_groups:
+    values: [2, 5, 6]
   task_epochs:
-    values: [10, 50] #[1, 10]
+    value: 10
+    #values: [1, 10]
   train:
     value: 'continual_task'
     #values: ['joint', 'independent', 'continual_task', 'continual_online']
@@ -56,7 +59,8 @@ parameters:
     #values: [0., 0.1, 1.0]
     value: 10.0
   store_fuzzy:
-    values: [True, False]
+    value: False
+    #values: [True, False]
   concept_lambda:
     values: [0., 0.1]
   concept_polarization_lambda:
@@ -67,7 +71,8 @@ parameters:
   use_mask:
     values: ['no', 'crisp'] #, 'fuzzy']
   min_pos_concepts:
-    values: [1, 3] #, 0]
+    value: 3
+    #values: [1, 3] #, 0]
   n_concepts:
     value: 30
     #values: [20, 30]
@@ -85,7 +90,8 @@ parameters:
     #values: [12, 32]
     value: 12
   hamming_margin:
-    value: 4
+    value: 3
     #values: [1, 2]
   triplet_lambda:
-    values: [0.1, 1.0] #, 0]
+    value: 1.0
+    #values: [0.1, 1.0] #, 0]
