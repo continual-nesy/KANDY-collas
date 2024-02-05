@@ -6,3 +6,6 @@ wandb
 __pycache__
 *.bak
 Note.txt
+data_analysis/media/
+data_analysis/data/
+data_analysis/*.pkl
