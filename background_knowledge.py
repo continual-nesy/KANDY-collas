@@ -93,6 +93,6 @@ def annotate_triplet_labels(annotations: pd.DataFrame) -> pd.DataFrame:
     assert "symbol" in annotations
     # TODO: use annotations["symbol"] to create an equivalence partitioning and store it in annotations["equivalence_class"] for each sample in the dataframe
     # Temporarily it returns the supervised labels
-    annotations["equivalence_class"] = annotations["label"]
+    annotations["equivalence_class"] = 2 * annotations["task_id"] + annotations["label"]
 
     return annotations

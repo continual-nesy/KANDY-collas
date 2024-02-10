@@ -56,7 +56,7 @@ decorrelation_params = [{"decorrelate_concepts": False, "decorrelation_groups": 
                         {"decorrelate_concepts": True, "decorrelation_groups": 1},
                         {"decorrelate_concepts": True, "decorrelation_groups": 3}]
 
-mask_params = [{"use_mask": "fuzzy"}]
+mask_params = [{"use_mask": "no"}]
 
 commands = []
 # Joint:
@@ -93,7 +93,7 @@ for m in models:
                         var_params += ["--{} {}".format(k, v) for k, v in m2.items()]
 
                         cmd += " ".join(var_params)
-                        commands.append(cmd)
+  #                      commands.append(cmd)
 
 if len(sys.argv) == 1:
     print("Not enough arguments were provided.\nRun with -h to get the list of supported arguments.")
