@@ -56,7 +56,7 @@ decorrelation_params = [{"decorrelate_concepts": False, "decorrelation_groups": 
                         {"decorrelate_concepts": True, "decorrelation_groups": 1},
                         {"decorrelate_concepts": True, "decorrelation_groups": 3}]
 
-mask_params = [{"use_mask": "no"}]
+mask_params = [{"use_mask": "crisp"}, {"use_mask": "fuzzy"}]
 
 commands = []
 # Joint:
