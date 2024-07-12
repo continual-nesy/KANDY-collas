@@ -1,4 +1,11 @@
-# Neural baselines
+# Continual learning for Unsupervised Concept Bottleneck Discovery (CoLLAs2024)
+
+Code for our paper [Continual learning for Unsupervised Concept Bottleneck Discovery](https://duckduckgo.com).
+
+Datasets were created with our [KANDYBenchmark Generator](https://github.com/continual-nesy/KANDYBenchmark), and are available in the [release section](https://github.com/continual-nesy/KANDY-collas/releases/latest).
+
+## Requirements
+See `requirements.txt`
 
 ## Usage
 ```commandline
@@ -7,30 +14,43 @@ python main.py parameters
 
 Parameter list:
 
-| Argument            | Values                                                          | Default  | Description                                                                  |
-|---------------------|-----------------------------------------------------------------|----------|------------------------------------------------------------------------------|
-| `--data_path`       | str                                                             | `./`     | Root of the data folder                                                      |
-| `--model`           | `mlp`, `cnn`, `resnet50`, `resnet50_head_only`, `vit_head_only` | `mlp`    | Neural network to train                                                      |
-| `--train`           | `independent`, `joint`, `continual_task`, `continual_online`    | `joint`  | Training scheme                                                              |
-| `--supervised_only` | bool                                                            | `False`  | Consider only supervised samples                                             |
-| `--augment`         | bool                                                            | `True`   | Perform random augmentation of the training data                             |
-| `--lr`              | float                                                           | `-0.001` | Learning rate. If < 0 use Adam, otherwise use SGD                            |
-| `--weight_decay`    | float                                                           | `0.0`    | Weight decay factor                                                          |
-| `--batch`           | int                                                             | `16`     | Minibatch size                                                               |
-| `--task_epochs`     | int                                                             | `1`      | Number of epochs for each task. Incompatible with `--train continual_online` |
-| `--balance`         | bool                                                            | `False`  | Resample positives and negatives to achieve balanced training data           |
-| `--replay_buffer`   | int                                                             | `0`      | Size of the replay buffer. Only with `--train continual_*`                   |
-| `--replay_lambda`   | float                                                           | `0.0`    | Weight of experience replay loss. Only with `--train_continual_*`            |
-| `--cem_emb_size`    | int                                                             | `12`     | Embedding size for a single concept                                          |
-| `--hamming_margin`  | int                                                             | `2`      | Margin (in bits) for the Hamming distance triplet loss                       |
-| `--triplet_lambda`  | float                                                           | `0.0`    | Weight of triplet loss                                                       |
-| `--concept_lambda`  | float                                                           | `0.0`    | Weight of concept loss                                                       |
-| `--seed`            | int                                                             | `-1`     | Seed for random generator. If < 0 use system time                            |
-| `--output_folder`   | str                                                             | `exp`    | Output folder                                                                |
-| `--device`          | str                                                             | `cpu`    | Torch device for experiments                                                 |
-| `--save_net`        | bool                                                            | `True`   | Save network weights at the end of the experiment                            |
-| `--save_results`    | bool                                                            | `True`   | Save results at the end of the experiment                                    |
-| `--save_options`    | bool                                                            | `True`   | Save options at the beginning of the experiment                              |
-| `--print_every`     | int                                                             | `10`     | Number of gradient steps before consecutive prints                           |
-| `--wandb_project`   | str                                                             | `None`   | W&B project name to optionally log results to                                |
-| `--wandb_group`     | str                                                             | `None`   | Group within the W&B project                                                 |
+| Argument                        | Values                                                          | Default  | Description                                                                                                                                                           |
+|---------------------------------|-----------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--data_path`                   | str                                                             | `./`     | Root of the data folder                                                                                                                                               |
+| `--model`                       | `mlp`, `cnn`, `resnet50`, `resnet50_head_only`, `vit_head_only` | `mlp`    | Neural network to train                                                                                                                                               |
+| `--train`                       | `independent`, `joint`, `continual_task`, `continual_online`    | `joint`  | Training scheme                                                                                                                                                       |
+| `--supervised_only`             | bool                                                            | `False`  | Consider only supervised samples                                                                                                                                      |
+| `--augment`                     | bool                                                            | `True`   | Perform random augmentation of the training data                                                                                                                      |
+| `--lr`                          | float                                                           | `-0.001` | Learning rate. If < 0 use Adam, otherwise use SGD                                                                                                                     |
+| `--weight_decay`                | float                                                           | `0.0`    | Weight decay factor                                                                                                                                                   |
+| `--batch`                       | int                                                             | `16`     | Minibatch size                                                                                                                                                        |
+| `--task_epochs`                 | int                                                             | `1`      | Number of epochs for each task. Incompatible with `--train continual_online`                                                                                          |
+| `--balance`                     | bool                                                            | `False`  | Resample positives and negatives to achieve balanced training data                                                                                                    |
+| `--replay_buffer`               | int                                                             | `0`      | Size of the replay buffer. Only with `--train continual_*`                                                                                                            |
+| `--replay_lambda`               | float                                                           | `0.0`    | Weight of experience replay loss. Only with `--train_continual_*`                                                                                                     |
+| `--cls_lambda`                  | float                                                           | `1.0`    | Weight of the portion of the loss that is about supervised classification                                                                                             |
+| `--store_fuzzy`                 | bool                                                            | `False`  | Store concepts in replay buffer as fuzzy tensors                                                                                                                      |
+| `--cem_emb_size`                | int                                                             | `12`     | Embedding size for a single concept                                                                                                                                   |
+| `--hamming_margin`              | int                                                             | `2`      | Margin (in bits) for the Hamming distance triplet loss                                                                                                                |
+| `--triplet_lambda`              | float                                                           | `0.0`    | Weight of triplet loss                                                                                                                                                |
+| `--concept_lambda`              | float                                                           | `0.0`    | Weight of concept loss                                                                                                                                                |
+| `--concept_polarization_lambda` | float                                                           | `0.01`   | Weight of the concept polarization loss                                                                                                                               |
+| `--mask_polarization_lambda`    | float                                                           | `0.01`   | Weight of the mask polarization loss                                                                                                                                  |
+| `--use_mask`                    | `no`, `crispy`, `fuzzy`                                         | `fuzzy`  | Hamming triplet loss mask                                                                                                                                             |
+| `--min_pos_concepts`            | int                                                             | `3`      | Minimum number of active concepts for positive samples for concept regularization                                                                                     |
+| `--n_concepts`                  | int                                                             | `20`     | Number of concepts in the CEM layer                                                                                                                                   |
+| `--share_embeddings`            | bool                                                            | `True`   | Whether weights for the c_emb linear layer should be shared for each concept                                                                                          |
+| `--decorrelate_concepts`        | bool                                                            | `False`  | Whether to add a Decorrelated Batch Normalization before c_pred sigmoid                                                                                               |
+| `--use_global_concepts`         | bool                                                            | `False`  | Whether to add number and alignment concepts to the concept list; True: 17 ground truth concepts (KANDY-2 dataset), False: 11 ground truth concepts (KANDY-1 dataset) |
+| `--decorrelation_groups`        | int                                                             | `0`      | Number of groups for decorrelation batch normalization, if 1 corresponds to traditional batch norm                                                                    |
+| `--compute_training_metrics`    | bool                                                            | `False`  | Whether to compute metrics on the training set as well (slow)                                                                                                         |
+| `--correlate_each_task`         | bool                                                            | `False`  | Whether to compute correlation matrices for each task (slow)                                                                                                          |
+| `--seed`                        | int                                                             | `-1`     | Seed for random generator. If < 0 use system time                                                                                                                     |
+| `--output_folder`               | str                                                             | `exp`    | Output folder                                                                                                                                                         |
+| `--device`                      | str                                                             | `cpu`    | Torch device for experiments                                                                                                                                          |
+| `--save_net`                    | bool                                                            | `True`   | Save network weights at the end of the experiment                                                                                                                     |
+| `--save_results`                | bool                                                            | `True`   | Save results at the end of the experiment                                                                                                                             |
+| `--save_options`                | bool                                                            | `True`   | Save options at the beginning of the experiment                                                                                                                       |
+| `--print_every`                 | int                                                             | `10`     | Number of gradient steps before consecutive prints                                                                                                                    |
+| `--wandb_project`               | str                                                             | `None`   | W&B project name to optionally log results to                                                                                                                         |
+| `--wandb_group`                 | str                                                             | `None`   | Group within the W&B project                                                                                                                                          |
