@@ -4,6 +4,9 @@ Code for our paper [Continual learning for Unsupervised Concept Bottleneck Disco
 
 Datasets were created with our [KANDYBenchmark Generator](https://github.com/continual-nesy/KANDYBenchmark), and are available in the [release section](https://github.com/continual-nesy/KANDY-collas/releases/latest).
 
+
+[![License: CC BY-NC-SA 4.0](https://licensebuttons.net/l/by-nc-sa/4.0/80x15.png)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 ## Requirements
 See `requirements.txt`
 
